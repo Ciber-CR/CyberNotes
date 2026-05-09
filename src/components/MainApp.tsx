@@ -38,6 +38,7 @@ export default function MainApp({ currentTheme, onThemeChange, onLock }: Props) 
   const [lastMousePos, setLastMousePos] = useState({ x: 0, y: 0 });
   const [autoLockMinutes, setAutoLockMinutes] = useState(0);
   const [rememberLastNote, setRememberLastNote] = useState(false);
+  const [showLineCounter, setShowLineCounter] = useState(false);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
@@ -151,6 +152,9 @@ export default function MainApp({ currentTheme, onThemeChange, onLock }: Props) 
     const remember = await window.cyberNotesAPI.getSetting('remember_last_note');
     const isRemember = remember === 'true';
     setRememberLastNote(isRemember);
+
+    const lineCounter = await window.cyberNotesAPI.getSetting('show_line_counter');
+    setShowLineCounter(lineCounter === 'true');
 
     if (isRemember) {
       const lastId = await window.cyberNotesAPI.getSetting('last_note_id');
@@ -319,6 +323,11 @@ export default function MainApp({ currentTheme, onThemeChange, onLock }: Props) 
     await window.cyberNotesAPI.setSetting('remember_last_note', v.toString());
   };
 
+  const handleShowLineCounterChange = async (v: boolean) => {
+    setShowLineCounter(v);
+    await window.cyberNotesAPI.setSetting('show_line_counter', v.toString());
+  };
+
   const selectedNote = notes.find(n => n.id === selectedNoteId) ?? null;
 
   const startDragSidebar = (e: React.MouseEvent) => {
@@ -442,6 +451,7 @@ export default function MainApp({ currentTheme, onThemeChange, onLock }: Props) 
           onCreateNote={handleCreateNote}
           layoutMode={layoutMode}
           onToggleLayout={() => setLayoutMode(prev => prev === 1 ? 3 : prev - 1 as any)}
+          showLineCounter={showLineCounter}
         />
       </div>
 
@@ -461,6 +471,8 @@ export default function MainApp({ currentTheme, onThemeChange, onLock }: Props) 
           onAutoLockChange={handleAutoLockChange}
           rememberLastNote={rememberLastNote}
           onRememberLastNoteChange={handleRememberLastNoteChange}
+          showLineCounter={showLineCounter}
+          onShowLineCounterChange={handleShowLineCounterChange}
           onClose={() => setShowSettings(false)}
           onLock={onLock}
         />

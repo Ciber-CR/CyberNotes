@@ -23,6 +23,7 @@ interface Props {
   onCreateNote: () => void;
   layoutMode: number;
   onToggleLayout: () => void;
+  showLineCounter?: boolean;
 }
 
 // Extensión personalizada para imagen con soporte de tamaño y alineación
@@ -83,7 +84,7 @@ const ToolbarBtn = ({
   </motion.button>
 );
 
-export default function NoteEditor({ note, onSave, onCreateNote, layoutMode, onToggleLayout }: Props) {
+export default function NoteEditor({ note, onSave, onCreateNote, layoutMode, onToggleLayout, showLineCounter }: Props) {
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const currentNoteRef = useRef<Note | null>(note);
   const [pinned, setPinned] = useState(note?.pinned === 1);
@@ -92,6 +93,7 @@ export default function NoteEditor({ note, onSave, onCreateNote, layoutMode, onT
   const [editLinkData, setEditLinkData] = useState<{ href: string } | null>(null);
   const [hoveredLink, setHoveredLink] = useState<string | null>(null);
   const [inputContextMenu, setInputContextMenu] = useState<{ x: number, y: number } | null>(null);
+  const [lineInfo, setLineInfo] = useState({ line: 1, col: 1, total: 1 });
 
   useEffect(() => {
     const closeMenu = () => {
@@ -168,8 +170,26 @@ export default function NoteEditor({ note, onSave, onCreateNote, layoutMode, onT
     onUpdate: ({ editor }) => {
       const html = editor.getHTML();
       scheduleAutoSave(html);
+      updateLineInfo(editor);
+    },
+    onSelectionUpdate: ({ editor }) => {
+      updateLineInfo(editor);
     },
   });
+
+  const updateLineInfo = (editor: any) => {
+    if (!showLineCounter) return;
+    const { from } = editor.state.selection;
+    const textBefore = editor.state.doc.textBetween(0, from, '\n');
+    const linesBefore = textBefore.split('\n');
+    const currentLine = linesBefore.length;
+    const currentCol = linesBefore[linesBefore.length - 1].length + 1;
+    
+    const totalText = editor.getText();
+    const totalLines = totalText.split('\n').length;
+    
+    setLineInfo({ line: currentLine, col: currentCol, total: totalLines });
+  };
 
   // Actualizar editor cuando cambia la nota seleccionada
   useEffect(() => {
@@ -364,7 +384,8 @@ export default function NoteEditor({ note, onSave, onCreateNote, layoutMode, onT
         </div>
 
         <div 
-          style={{ flex: 1, position: 'relative', cursor: 'text' }}
+          className={showLineCounter ? 'show-line-numbers' : ''}
+          style={{ position: 'relative', cursor: 'text' }}
           onClick={(e) => {
             if (editor && e.target === e.currentTarget) {
               editor.commands.focus('end');
@@ -391,7 +412,7 @@ export default function NoteEditor({ note, onSave, onCreateNote, layoutMode, onT
               }}
             />
           ) : (
-            editor && <EditorContent editor={editor} style={{ height: '100%', padding: '0 48px 32px' }} />
+            editor && <EditorContent editor={editor} style={{ minHeight: '100%', width: '100%' }} />
           )}
 
           {/* Browser-like Link Hover Preview */}
@@ -425,6 +446,27 @@ export default function NoteEditor({ note, onSave, onCreateNote, layoutMode, onT
             </motion.div>
           )}
         </div>
+
+        {showLineCounter && (
+          <div style={{
+            padding: '4px 16px',
+            background: 'var(--bg-notelist)',
+            borderTop: '1px solid var(--border)',
+            display: 'flex',
+            justifyContent: 'flex-end',
+            gap: 16,
+            fontSize: 10,
+            color: 'var(--text-muted)',
+            fontFamily: 'var(--font-mono)',
+            letterSpacing: 0.5,
+            opacity: 0.8,
+            flexShrink: 0
+          }}>
+            <span>LÍNEA: {lineInfo.line}</span>
+            <span>COL: {lineInfo.col}</span>
+            <span>TOTAL: {lineInfo.total} LÍNEAS</span>
+          </div>
+        )}
       </div>
 
       {contextMenu && editor && createPortal(

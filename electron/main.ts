@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, shell, Tray, Menu, session } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, shell, Tray, Menu, session, screen } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
@@ -10,10 +10,18 @@ const require = createRequire(import.meta.url);
 // ─── Detectar si estamos en dev o producción ───────────────────────────────
 const isDev = !app.isPackaged;
 
-// Icon path
-const iconPath = isDev 
-  ? path.join(__dirname, '..', 'public', 'icon.png') 
-  : path.join(__dirname, '..', 'dist', 'icon.png');
+// Icon path resolution
+let iconPath = path.join(__dirname, '..', 'public', 'icon.png');
+if (!isDev) {
+  // En producción, buscamos en el dist dentro del asar o carpeta app
+  iconPath = path.join(app.getAppPath(), 'dist', 'icon.png');
+}
+
+// Fallback por seguridad (si no existe el png, usar el .ico o nada)
+if (!fs.existsSync(iconPath)) {
+  const fallbackIcon = path.join(isDev ? path.join(__dirname, '..', 'public') : path.join(app.getAppPath(), 'dist'), 'icon.ico');
+  if (fs.existsSync(fallbackIcon)) iconPath = fallbackIcon;
+}
 
 // ─── bcrypt (pure JS, no nativo) ──────────────────────────────────────────
 const bcrypt = require('bcryptjs');
@@ -123,23 +131,27 @@ let tray: Tray | null = null;
 let isQuitting = false;
 
 function createTray() {
-  tray = new Tray(iconPath);
-  const contextMenu = Menu.buildFromTemplate([
-    { label: 'Abrir CyberNotes', click: () => mainWindow?.show() },
-    { type: 'separator' },
-    { label: 'Salir', click: () => {
-        isQuitting = true;
-        app.quit();
-      } 
-    }
-  ]);
-  
-  tray.setToolTip('CyberNotes');
-  tray.setContextMenu(contextMenu);
-  
-  tray.on('double-click', () => {
-    mainWindow?.show();
-  });
+  try {
+    tray = new Tray(iconPath);
+    const contextMenu = Menu.buildFromTemplate([
+      { label: 'Abrir CyberNotes', click: () => mainWindow?.show() },
+      { type: 'separator' },
+      { label: 'Salir', click: () => {
+          isQuitting = true;
+          app.quit();
+        } 
+      }
+    ]);
+    
+    tray.setToolTip('CyberNotes');
+    tray.setContextMenu(contextMenu);
+    
+    tray.on('double-click', () => {
+      mainWindow?.show();
+    });
+  } catch (err) {
+    console.error('Failed to create tray:', err);
+  }
 }
 
 function createWindow() {
@@ -147,11 +159,19 @@ function createWindow() {
   const boundsJson = queryGet('SELECT value FROM settings WHERE key = ?', ['window_bounds']);
   const isMaximizedVal = queryGet('SELECT value FROM settings WHERE key = ?', ['is_maximized']);
   
-  let bounds = { width: 1280, height: 800, x: undefined, y: undefined };
+  const primaryDisplay = screen.getPrimaryDisplay();
+  const { width: scrW, height: scrH } = primaryDisplay.workAreaSize;
+
+  let bounds = { width: 1100, height: 700, x: undefined, y: undefined };
   
   if (boundsJson) {
     try {
-      bounds = JSON.parse(boundsJson.value);
+      const savedBounds = JSON.parse(boundsJson.value);
+      // Validar que no sean valores absurdos o que excedan demasiado la pantalla
+      if (savedBounds.width > 400 && savedBounds.width <= scrW + 100 && 
+          savedBounds.height > 400 && savedBounds.height <= scrH + 100) {
+        bounds = savedBounds;
+      }
     } catch (e) {}
   }
 
@@ -160,6 +180,7 @@ function createWindow() {
     height: bounds.height,
     x: bounds.x,
     y: bounds.y,
+    center: !bounds.x,
     minWidth: 900,
     minHeight: 600,
     frame: false,

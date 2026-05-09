@@ -17,6 +17,8 @@ interface Props {
   onAutoLockChange: (v: number) => void;
   rememberLastNote: boolean;
   onRememberLastNoteChange: (v: boolean) => void;
+  showLineCounter: boolean;
+  onShowLineCounterChange: (v: boolean) => void;
   onClose: () => void;
   onLock: () => void;
 }
@@ -38,6 +40,7 @@ export default function SettingsModal({
   bgImage, onBgImageChange, glassBlur, onBlurChange, bgOpacity, onOpacityChange,
   autoLockMinutes, onAutoLockChange,
   rememberLastNote, onRememberLastNoteChange,
+  showLineCounter, onShowLineCounterChange,
   onClose, onLock 
 }: Props) {
   const [tab, setTab] = useState<Tab>('general');
@@ -463,6 +466,37 @@ export default function SettingsModal({
                         height: 20,
                         appearance: 'none',
                         background: rememberLastNote ? 'var(--accent)' : 'var(--border)',
+                        borderRadius: 10,
+                        position: 'relative',
+                        cursor: 'pointer',
+                        transition: 'background 0.2s'
+                      }}
+                    />
+                  </label>
+
+                  <label style={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    justifyContent: 'space-between',
+                    padding: '12px 16px',
+                    background: 'var(--bg-surface)',
+                    borderRadius: 'var(--radius-md)',
+                    border: '1px solid var(--border)',
+                    cursor: 'pointer'
+                  }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                      <span style={{ fontSize: 13, color: 'var(--text-primary)', fontWeight: 500 }}>Mostrar contador de líneas</span>
+                      <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Muestra la línea y columna actual en el editor</span>
+                    </div>
+                    <input 
+                      type="checkbox" 
+                      checked={showLineCounter}
+                      onChange={(e) => onShowLineCounterChange(e.target.checked)}
+                      style={{
+                        width: 40,
+                        height: 20,
+                        appearance: 'none',
+                        background: showLineCounter ? 'var(--accent)' : 'var(--border)',
                         borderRadius: 10,
                         position: 'relative',
                         cursor: 'pointer',

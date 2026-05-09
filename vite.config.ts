@@ -6,7 +6,6 @@ import electron from 'vite-plugin-electron/simple';
 // Native Node/Electron modules that must NOT be bundled
 const EXTERNAL_MODULES = [
   'better-sqlite3',
-  'bcryptjs',
   'electron',
   'path',
   'fs',
@@ -17,10 +16,10 @@ const EXTERNAL_MODULES = [
   'events',
   'stream',
   'util',
-  'uuid',
 ];
 
 export default defineConfig({
+  base: './',
   plugins: [
     react(),
     electron({

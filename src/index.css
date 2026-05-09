@@ -482,6 +482,51 @@ body:has(.has-bg),
   font-family: var(--font-ui);
 }
 
+/* ─── Line Numbers Gutter ─── */
+.show-line-numbers .ProseMirror {
+  counter-reset: line;
+  padding-left: 70px !important;
+}
+
+.show-line-numbers .ProseMirror > * {
+  position: relative;
+}
+
+.show-line-numbers .ProseMirror > *::before {
+  counter-increment: line;
+  content: counter(line);
+  position: absolute;
+  left: -48px;
+  width: 32px;
+  text-align: right;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  opacity: 0.4;
+  user-select: none;
+  pointer-events: none;
+  font-weight: 500;
+  padding-right: 12px;
+  border-right: 1px solid transparent;
+  display: inline-block;
+  line-height: 1.75; /* Match paragraph line height */
+}
+
+/* Gutter Background Effect */
+.show-line-numbers .ProseMirror::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 50px;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.15);
+  border-right: 1px solid var(--border);
+  pointer-events: none;
+  z-index: 0;
+}
+
+
 .ProseMirror p {
   margin-bottom: 0.75em;
 }

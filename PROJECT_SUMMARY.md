@@ -32,6 +32,7 @@ CyberNotes es una aplicación de escritorio premium para la toma de notas privad
 ### ⚙️ Integración con el Sistema
 - **Bandeja de Sistema (Tray)**: Minimización a la bandeja y ejecución en segundo plano.
 - **Auto-inicio**: Opción para iniciar con Windows automáticamente en modo minimizado.
+- **Contador de Líneas**: Barra de estado opcional que muestra la línea, columna y total de líneas en el editor.
 - **Iconografía**: Branding personalizado con iconos multi-resolución de alta calidad.
 
 ### 💾 Gestión de Datos

@@ -1,73 +1,62 @@
-# React + TypeScript + Vite
+# CyberNotes 🚀
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+**CyberNotes** is a premium, secure, and privacy-focused note-taking application designed for the modern user. Built with Electron, React, and SQL.js, it offers a high-performance experience with a stunning "Cyber" aesthetic.
 
-Currently, two official plugins are available:
+![CyberNotes UI](public/icon.png)
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## ✨ Key Features
 
-## React Compiler
+- **Privacy First**: Local-only database powered by SQL.js. Optional master password protection with bcrypt encryption.
+- **Rich Text Editing**: Advanced editor based on TipTap with support for:
+  - Markdown-style shortcuts.
+  - Image integration (saved locally in your user profile).
+  - Code blocks, highlights, and link previews.
+  - **Optional Line Counter Gutter** for a professional developer-like writing experience.
+- **Organization**: Intuitive folder system with customizable icons and colors.
+- **Advanced Customization**:
+  - Dynamic UI Scaling.
+  - Glassmorphism effects with adjustable blur.
+  - Custom background images and opacity.
+  - Multiple curated themes (Cyber Dark, Cyber Purple, etc.).
+- **Desktop Ready**:
+  - System tray integration for background operation.
+  - Auto-start with Windows support.
+  - Single-instance locking to prevent duplicate processes.
+  - Automatic inactivity lock for enhanced security.
+- **Reliable Performance**: Optimized startup handling with display-aware window sanitization to ensure a perfect fit on any monitor setup.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## 🛠️ Tech Stack
 
-## Expanding the ESLint configuration
+- **Frontend**: React 19, TypeScript, Vite.
+- **Editor**: TipTap (ProseMirror).
+- **Animations**: Motion (formerly Framer Motion).
+- **Storage**: SQL.js (SQLite WASM) for high-performance local persistence.
+- **Security**: bcryptjs for secure password hashing.
+- **Desktop**: Electron 35.
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+## 🚀 Getting Started
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+### Prerequisites
+- Node.js (Latest LTS recommended)
+- npm or yarn
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+### Installation
+1. Clone the repository.
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
+3. Run in development mode:
+   ```bash
+   npm run dev
+   ```
+4. Build the production installer:
+   ```bash
+   npm run build:electron
+   ```
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+## 📦 Distribution
+The application is packaged using `electron-builder`. Installers for Windows can be found in the `release/` directory after running the build command.
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
-
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+---
+*Created by Antigravity AI for Cyber-CR*
