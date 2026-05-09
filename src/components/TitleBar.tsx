@@ -25,14 +25,11 @@ export default function TitleBar({ onLock }: Props) {
         <div style={{
           width: 22,
           height: 22,
-          borderRadius: 6,
-          background: 'var(--accent-dim)',
-          border: '1px solid var(--accent)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
         }}>
-          <BookOpen size={12} color="var(--accent-light)" />
+          <img src="icon.png" style={{ width: 22, height: 22, borderRadius: 4 }} alt="Logo" />
         </div>
         <span style={{
           fontSize: 'calc(13px * var(--ui-scale))',

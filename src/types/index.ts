@@ -49,6 +49,8 @@ declare global {
       // Settings
       getSetting: (key: string) => Promise<string | null>;
       setSetting: (key: string, value: string) => Promise<boolean>;
+      setAutoStart: (enable: boolean) => Promise<boolean>;
+      getAutoStart: () => Promise<boolean>;
       // Folders
       getFolders: () => Promise<Folder[]>;
       createFolder: (folder: Folder) => Promise<Folder>;
@@ -63,8 +65,14 @@ declare global {
       // Import / Export
       exportData: () => Promise<boolean>;
       importData: () => Promise<boolean>;
+      // Assets
+      selectAndSaveImage: () => Promise<string | null>;
       // Events
       onStatusBarUrl: (callback: (url: string) => void) => () => void;
+      onContextMenuData: (callback: (data: any) => void) => () => void;
+      // Spellcheck
+      replaceMisspelling: (word: string) => Promise<void>;
+      addToDictionary: (word: string) => Promise<void>;
     };
   }
 }

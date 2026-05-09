@@ -32,6 +32,8 @@ contextBridge.exposeInMainWorld('cyberNotesAPI', {
   // -- Settings --
   getSetting: (key: string) => ipcRenderer.invoke('settings:get', key),
   setSetting: (key: string, value: string) => ipcRenderer.invoke('settings:set', key, value),
+  setAutoStart: (enable: boolean) => ipcRenderer.invoke('settings:setAutoStart', enable),
+  getAutoStart: () => ipcRenderer.invoke('settings:getAutoStart'),
 
   // -- Folders --
   getFolders: () => ipcRenderer.invoke('folders:getAll'),

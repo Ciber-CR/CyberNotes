@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Folder, Note, ThemeId } from '../types';
 import TitleBar from './TitleBar';
 import Sidebar from './Sidebar';
@@ -36,6 +36,9 @@ export default function MainApp({ currentTheme, onThemeChange, onLock }: Props) 
     misspelledWord?: string;
   } | null>(null);
   const [lastMousePos, setLastMousePos] = useState({ x: 0, y: 0 });
+  const [autoLockMinutes, setAutoLockMinutes] = useState(0);
+  const [rememberLastNote, setRememberLastNote] = useState(false);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     const trackMouse = (e: MouseEvent) => {
@@ -74,6 +77,31 @@ export default function MainApp({ currentTheme, onThemeChange, onLock }: Props) 
     };
   }, []);
 
+  // Lógica de Auto-bloqueo
+  useEffect(() => {
+    if (autoLockMinutes <= 0) {
+      if (timerRef.current) clearTimeout(timerRef.current);
+      return;
+    }
+
+    const resetTimer = () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+      timerRef.current = setTimeout(() => {
+        onLock();
+      }, autoLockMinutes * 60 * 1000);
+    };
+
+    const events = ['mousedown', 'mousemove', 'keydown', 'wheel', 'touchstart'];
+    events.forEach(e => window.addEventListener(e, resetTimer));
+
+    resetTimer();
+
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+      events.forEach(e => window.removeEventListener(e, resetTimer));
+    };
+  }, [autoLockMinutes, onLock]);
+
   // Detector de links vía mousemove (máxima compatibilidad)
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -97,6 +125,13 @@ export default function MainApp({ currentTheme, onThemeChange, onLock }: Props) 
     return () => window.removeEventListener('mousemove', handleMouseMove);
   }, [statusBarUrl]);
 
+  // Guardar última nota si la opción está activa
+  useEffect(() => {
+    if (rememberLastNote && selectedNoteId) {
+      window.cyberNotesAPI.setSetting('last_note_id', selectedNoteId);
+    }
+  }, [selectedNoteId, rememberLastNote]);
+
   const loadSettings = async () => {
     const scale = await window.cyberNotesAPI.getSetting('ui_scale');
     if (scale) setUiScale(parseFloat(scale));
@@ -109,6 +144,18 @@ export default function MainApp({ currentTheme, onThemeChange, onLock }: Props) 
 
     const op = await window.cyberNotesAPI.getSetting('bg_opacity');
     if (op) setBgOpacity(parseFloat(op));
+
+    const lock = await window.cyberNotesAPI.getSetting('auto_lock_minutes');
+    if (lock) setAutoLockMinutes(parseInt(lock));
+
+    const remember = await window.cyberNotesAPI.getSetting('remember_last_note');
+    const isRemember = remember === 'true';
+    setRememberLastNote(isRemember);
+
+    if (isRemember) {
+      const lastId = await window.cyberNotesAPI.getSetting('last_note_id');
+      if (lastId) setSelectedNoteId(lastId);
+    }
   };
 
   const loadFolders = async () => {
@@ -257,9 +304,19 @@ export default function MainApp({ currentTheme, onThemeChange, onLock }: Props) 
     window.cyberNotesAPI.setSetting('glass_blur', val.toString());
   };
 
-  const handleOpacityChange = (val: number) => {
-    setBgOpacity(val);
-    window.cyberNotesAPI.setSetting('bg_opacity', val.toString());
+  const handleOpacityChange = async (v: number) => {
+    setBgOpacity(v);
+    await window.cyberNotesAPI.setSetting('bg_opacity', v.toString());
+  };
+
+  const handleAutoLockChange = async (v: number) => {
+    setAutoLockMinutes(v);
+    await window.cyberNotesAPI.setSetting('auto_lock_minutes', v.toString());
+  };
+
+  const handleRememberLastNoteChange = async (v: boolean) => {
+    setRememberLastNote(v);
+    await window.cyberNotesAPI.setSetting('remember_last_note', v.toString());
   };
 
   const selectedNote = notes.find(n => n.id === selectedNoteId) ?? null;
@@ -400,6 +457,10 @@ export default function MainApp({ currentTheme, onThemeChange, onLock }: Props) 
           onBlurChange={handleBlurChange}
           bgOpacity={bgOpacity}
           onOpacityChange={handleOpacityChange}
+          autoLockMinutes={autoLockMinutes}
+          onAutoLockChange={handleAutoLockChange}
+          rememberLastNote={rememberLastNote}
+          onRememberLastNoteChange={handleRememberLastNoteChange}
           onClose={() => setShowSettings(false)}
           onLock={onLock}
         />

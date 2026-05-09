@@ -11,7 +11,9 @@ const require = createRequire(import.meta.url);
 const isDev = !app.isPackaged;
 
 // Icon path
-const iconPath = path.join(__dirname, '..', 'assets', 'icon.png');
+const iconPath = isDev 
+  ? path.join(__dirname, '..', 'public', 'icon.png') 
+  : path.join(__dirname, '..', 'dist', 'icon.png');
 
 // ─── bcrypt (pure JS, no nativo) ──────────────────────────────────────────
 const bcrypt = require('bcryptjs');
@@ -36,12 +38,14 @@ function saveDbToDisk() {
 
 async function initDatabase() {
   // Resolver path del WASM de sql.js
-  const sqlJsPath = path.join(__dirname, '..', 'node_modules', 'sql.js', 'dist');
+  const sqlWasmPath = isDev 
+    ? path.join(__dirname, '..', 'node_modules', 'sql.js', 'dist', 'sql-wasm.wasm')
+    : path.join(process.resourcesPath, 'sql-wasm.wasm');
   
   // Inicializar sql.js con el archivo WASM
   const initSqlJs = require('sql.js');
   SQL = await initSqlJs({
-    locateFile: (file: string) => path.join(sqlJsPath, file),
+    locateFile: () => sqlWasmPath,
   });
 
   // Cargar DB desde disco si existe, o crear nueva
@@ -239,8 +243,12 @@ function createWindow() {
     if (isMaximizedVal?.value === 'true') {
       mainWindow?.maximize();
     }
-    mainWindow!.show();
-    mainWindow!.focus();
+    
+    // Si se inicia automáticamente al arrancar el PC, se pasa --hidden para iniciar en bandeja
+    if (!process.argv.includes('--hidden')) {
+      mainWindow!.show();
+      mainWindow!.focus();
+    }
   });
 }
 
@@ -294,9 +302,24 @@ ipcMain.handle('settings:set', (_e: any, key: string, value: string) => {
   return true;
 });
 
+ipcMain.handle('settings:setAutoStart', (_e: any, enable: boolean) => {
+  app.setLoginItemSettings({
+    openAtLogin: enable,
+    openAsHidden: true, // macOS
+    args: enable ? ['--hidden'] : [] // Windows / Linux
+  });
+  runQuery('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', ['auto_start', enable ? 'true' : 'false']);
+  return true;
+});
+
+ipcMain.handle('settings:getAutoStart', () => {
+  const settings = app.getLoginItemSettings();
+  return settings.openAtLogin;
+});
+
 // -- Folders --
 ipcMain.handle('folders:getAll', () => {
-  return queryAll('SELECT * FROM folders ORDER BY sort_order ASC, created_at ASC');
+  return queryAll('SELECT * FROM folders ORDER BY name COLLATE NOCASE ASC');
 });
 
 ipcMain.handle('folders:create', (_e: any, folder: any) => {
@@ -429,23 +452,37 @@ ipcMain.handle('data:import', async () => {
 });
 
 // ─── App lifecycle ─────────────────────────────────────────────────────────
-app.whenReady().then(async () => {
-  // Habilitar diccionarios bilingües simultáneos (Español e Inglés)
-  session.defaultSession.setSpellCheckerLanguages(['es-ES', 'en-US']);
+const gotTheLock = app.requestSingleInstanceLock();
 
-  await initDatabase();
-  createWindow();
-  createTray();
-
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
-    else mainWindow?.show();
+if (!gotTheLock) {
+  app.quit();
+} else {
+  app.on('second-instance', (event, commandLine, workingDirectory) => {
+    // Someone tried to run a second instance, we should focus our window.
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
+    }
   });
-});
 
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    if (!tray) app.quit();
-  }
-});
+  app.whenReady().then(async () => {
+    // Habilitar diccionarios bilingües simultáneos (Español e Inglés)
+    session.defaultSession.setSpellCheckerLanguages(['es-ES', 'en-US']);
 
+    await initDatabase();
+    createWindow();
+    createTray();
+
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) createWindow();
+      else mainWindow?.show();
+    });
+  });
+
+  app.on('window-all-closed', () => {
+    if (process.platform !== 'darwin') {
+      if (!tray) app.quit();
+    }
+  });
+}

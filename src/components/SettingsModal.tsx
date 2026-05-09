@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { ThemeId } from '../types';
 import { X, Lock, FolderOpen, Shield, Palette, Monitor, Trash2, Eye, EyeOff, Download, Upload } from 'lucide-react';
 
@@ -13,6 +13,10 @@ interface Props {
   onBlurChange: (v: number) => void;
   bgOpacity: number;
   onOpacityChange: (v: number) => void;
+  autoLockMinutes: number;
+  onAutoLockChange: (v: number) => void;
+  rememberLastNote: boolean;
+  onRememberLastNoteChange: (v: boolean) => void;
   onClose: () => void;
   onLock: () => void;
 }
@@ -32,6 +36,8 @@ type Tab = 'general' | 'security' | 'about';
 export default function SettingsModal({ 
   currentTheme, onThemeChange, uiScale, onScaleChange, 
   bgImage, onBgImageChange, glassBlur, onBlurChange, bgOpacity, onOpacityChange,
+  autoLockMinutes, onAutoLockChange,
+  rememberLastNote, onRememberLastNoteChange,
   onClose, onLock 
 }: Props) {
   const [tab, setTab] = useState<Tab>('general');
@@ -43,11 +49,14 @@ export default function SettingsModal({
   const [pwdError, setPwdError] = useState(false);
   const [pwdLoading, setPwdLoading] = useState(false);
   const [closeToTray, setCloseToTray] = useState(false);
+  const [autoStart, setAutoStart] = useState(false);
 
   useEffect(() => {
     const loadSettings = async () => {
       const val = await window.cyberNotesAPI.getSetting('close_to_tray');
       setCloseToTray(val === 'true');
+      const isAutoStart = await window.cyberNotesAPI.getAutoStart();
+      setAutoStart(isAutoStart);
     };
     loadSettings();
   }, []);
@@ -55,6 +64,11 @@ export default function SettingsModal({
   const handleToggleTray = async (val: boolean) => {
     setCloseToTray(val);
     await window.cyberNotesAPI.setSetting('close_to_tray', val.toString());
+  };
+
+  const handleToggleAutoStart = async (val: boolean) => {
+    setAutoStart(val);
+    await window.cyberNotesAPI.setAutoStart(val);
   };
 
   const handleSetPassword = async () => {
@@ -363,36 +377,100 @@ export default function SettingsModal({
                 <h3 style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 12, textTransform: 'uppercase', letterSpacing: 0.5 }}>
                   Comportamiento
                 </h3>
-                <label style={{ 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  justifyContent: 'space-between',
-                  padding: '12px 16px',
-                  background: 'var(--bg-surface)',
-                  borderRadius: 'var(--radius-md)',
-                  border: '1px solid var(--border)',
-                  cursor: 'pointer'
-                }}>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                    <span style={{ fontSize: 13, color: 'var(--text-primary)', fontWeight: 500 }}>Cerrar a la bandeja de sistema</span>
-                    <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Al presionar X, la app se mantendrá activa en la bandeja</span>
-                  </div>
-                  <input 
-                    type="checkbox" 
-                    checked={closeToTray}
-                    onChange={(e) => handleToggleTray(e.target.checked)}
-                    style={{
-                      width: 40,
-                      height: 20,
-                      appearance: 'none',
-                      background: closeToTray ? 'var(--accent)' : 'var(--border)',
-                      borderRadius: 10,
-                      position: 'relative',
-                      cursor: 'pointer',
-                      transition: 'background 0.2s'
-                    }}
-                  />
-                </label>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <label style={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    justifyContent: 'space-between',
+                    padding: '12px 16px',
+                    background: 'var(--bg-surface)',
+                    borderRadius: 'var(--radius-md)',
+                    border: '1px solid var(--border)',
+                    cursor: 'pointer'
+                  }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                      <span style={{ fontSize: 13, color: 'var(--text-primary)', fontWeight: 500 }}>Cerrar a la bandeja de sistema</span>
+                      <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Al presionar X, la app se mantendrá activa en la bandeja</span>
+                    </div>
+                    <input 
+                      type="checkbox" 
+                      checked={closeToTray}
+                      onChange={(e) => handleToggleTray(e.target.checked)}
+                      style={{
+                        width: 40,
+                        height: 20,
+                        appearance: 'none',
+                        background: closeToTray ? 'var(--accent)' : 'var(--border)',
+                        borderRadius: 10,
+                        position: 'relative',
+                        cursor: 'pointer',
+                        transition: 'background 0.2s'
+                      }}
+                    />
+                  </label>
+
+                  <label style={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    justifyContent: 'space-between',
+                    padding: '12px 16px',
+                    background: 'var(--bg-surface)',
+                    borderRadius: 'var(--radius-md)',
+                    border: '1px solid var(--border)',
+                    cursor: 'pointer'
+                  }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                      <span style={{ fontSize: 13, color: 'var(--text-primary)', fontWeight: 500 }}>Iniciar con Windows (minimizado)</span>
+                      <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>La app se abrirá en la bandeja al arrancar el equipo</span>
+                    </div>
+                    <input 
+                      type="checkbox" 
+                      checked={autoStart}
+                      onChange={(e) => handleToggleAutoStart(e.target.checked)}
+                      style={{
+                        width: 40,
+                        height: 20,
+                        appearance: 'none',
+                        background: autoStart ? 'var(--accent)' : 'var(--border)',
+                        borderRadius: 10,
+                        position: 'relative',
+                        cursor: 'pointer',
+                        transition: 'background 0.2s'
+                      }}
+                    />
+                  </label>
+
+                  <label style={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    justifyContent: 'space-between',
+                    padding: '12px 16px',
+                    background: 'var(--bg-surface)',
+                    borderRadius: 'var(--radius-md)',
+                    border: '1px solid var(--border)',
+                    cursor: 'pointer'
+                  }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                      <span style={{ fontSize: 13, color: 'var(--text-primary)', fontWeight: 500 }}>Recordar última nota al abrir</span>
+                      <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>La app se reabrirá en la nota donde la dejaste</span>
+                    </div>
+                    <input 
+                      type="checkbox" 
+                      checked={rememberLastNote}
+                      onChange={(e) => onRememberLastNoteChange(e.target.checked)}
+                      style={{
+                        width: 40,
+                        height: 20,
+                        appearance: 'none',
+                        background: rememberLastNote ? 'var(--accent)' : 'var(--border)',
+                        borderRadius: 10,
+                        position: 'relative',
+                        cursor: 'pointer',
+                        transition: 'background 0.2s'
+                      }}
+                    />
+                  </label>
+                </div>
               </div>
 
               <div className="divider" />
@@ -539,6 +617,43 @@ export default function SettingsModal({
                 <Lock size={14} />
                 Bloquear app ahora
               </button>
+
+              <div className="divider" />
+
+              <div>
+                <h3 style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 12, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                  Auto-bloqueo por inactividad
+                </h3>
+                <div style={{ 
+                  padding: '16px',
+                  background: 'var(--bg-surface)',
+                  borderRadius: 'var(--radius-md)',
+                  border: '1px solid var(--border)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 12
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <div style={{ color: 'var(--accent)', opacity: 0.8 }}><Shield size={18} /></div>
+                    <select 
+                      value={autoLockMinutes}
+                      onChange={(e) => onAutoLockChange(parseInt(e.target.value))}
+                      className="input"
+                      style={{ flex: 1, background: 'var(--bg-app)', cursor: 'pointer' }}
+                    >
+                      <option value="0">Nunca (Desactivado)</option>
+                      <option value="1">Después de 1 minuto</option>
+                      <option value="5">Después de 5 minutos</option>
+                      <option value="15">Después de 15 minutos</option>
+                      <option value="30">Después de 30 minutos</option>
+                      <option value="60">Después de 1 hora</option>
+                    </select>
+                  </div>
+                  <p style={{ fontSize: 11, color: 'var(--text-muted)', margin: 0 }}>
+                    La aplicación se bloqueará automáticamente si no detecta actividad del ratón o teclado durante el tiempo seleccionado.
+                  </p>
+                </div>
+              </div>
             </div>
           )}
 
@@ -546,7 +661,7 @@ export default function SettingsModal({
           {tab === 'about' && (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16, padding: '20px 0' }}>
                 <img 
-                  src="/icon.png" 
+                  src="icon.png" 
                   alt="CyberNotes Icon" 
                   style={{
                     width: 72,

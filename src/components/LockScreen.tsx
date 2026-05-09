@@ -94,15 +94,20 @@ export default function LockScreen({ onUnlock }: Props) {
           <div style={{
             width: 64,
             height: 64,
-            borderRadius: 18,
-            background: 'var(--accent-dim)',
-            border: '1.5px solid var(--accent)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            boxShadow: '0 0 24px var(--accent-glow)',
           }}>
-            <Shield size={30} color="var(--accent-light)" />
+            <img 
+              src="icon.png" 
+              style={{
+                width: 64,
+                height: 64,
+                borderRadius: 18,
+                boxShadow: '0 0 24px var(--accent-glow)',
+              }} 
+              alt="Logo"
+            />
           </div>
           <div style={{ textAlign: 'center' }}>
             <h1 style={{ fontSize: 24, fontWeight: 700, color: 'var(--text-primary)', letterSpacing: -0.5 }}>

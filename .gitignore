@@ -22,3 +22,14 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Build and Tooling
+dist
+dist-electron
+release
+icons
+scratch
+*.db
+*.db-journal
+*.backup-*
+

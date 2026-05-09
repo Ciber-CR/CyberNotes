@@ -22,7 +22,7 @@
       "dist-electron"
     ],
     "win": {
-      "icon": "public/icon.png",
+      "icon": "public/icon.ico",
       "target": [
         "nsis"
       ]
@@ -35,11 +35,8 @@
     },
     "extraResources": [
       {
-        "from": "node_modules/better-sqlite3/build/Release/",
-        "to": "better-sqlite3/",
-        "filter": [
-          "**/*.node"
-        ]
+        "from": "node_modules/sql.js/dist/sql-wasm.wasm",
+        "to": "sql-wasm.wasm"
       }
     ]
   },
