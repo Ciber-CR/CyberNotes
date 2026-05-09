@@ -1,0 +1,70 @@
+// ─── Tipos compartidos de CyberNotes ──────────────────────────────────────
+
+export interface Folder {
+  id: string;
+  name: string;
+  icon: string;
+  color: string;
+  sort_order: number;
+  created_at: string;
+}
+
+export interface Note {
+  id: string;
+  folder_id: string | null;
+  title: string;
+  content: string; // JSON serializado de TipTap
+  preview: string;
+  pinned: number; // 0 | 1
+  created_at: string;
+  updated_at: string;
+}
+
+export type ThemeId = 'cyber-dark' | 'midnight' | 'forest' | 'light' | 'graphite' | 'neon' | 'cyber-custom';
+
+export interface Theme {
+  id: ThemeId;
+  name: string;
+  emoji: string;
+  vars: Record<string, string>;
+}
+
+export type AppView = 'lock' | 'setup' | 'app';
+
+// Window API type
+declare global {
+  interface Window {
+    cyberNotesAPI: {
+      // Ventana
+      windowMinimize: () => Promise<void>;
+      windowMaximizeToggle: () => Promise<void>;
+      windowClose: () => Promise<void>;
+      openDevTools: () => Promise<void>;
+      openDataFolder: () => Promise<void>;
+      // Auth
+      hasPassword: () => Promise<boolean>;
+      setPassword: (password: string) => Promise<boolean>;
+      verifyPassword: (password: string) => Promise<boolean>;
+      removePassword: () => Promise<boolean>;
+      // Settings
+      getSetting: (key: string) => Promise<string | null>;
+      setSetting: (key: string, value: string) => Promise<boolean>;
+      // Folders
+      getFolders: () => Promise<Folder[]>;
+      createFolder: (folder: Folder) => Promise<Folder>;
+      updateFolder: (folder: Partial<Folder> & { id: string }) => Promise<boolean>;
+      deleteFolder: (id: string) => Promise<boolean>;
+      // Notes
+      getAllNotes: () => Promise<Note[]>;
+      getNotesByFolder: (folderId: string | null) => Promise<Note[]>;
+      saveNote: (note: Note) => Promise<Note>;
+      deleteNote: (id: string) => Promise<boolean>;
+      searchNotes: (query: string) => Promise<Note[]>;
+      // Import / Export
+      exportData: () => Promise<boolean>;
+      importData: () => Promise<boolean>;
+      // Events
+      onStatusBarUrl: (callback: (url: string) => void) => () => void;
+    };
+  }
+}
