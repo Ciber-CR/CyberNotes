@@ -1,1 +1,48 @@
-"use strict";const e=require("electron");e.contextBridge.exposeInMainWorld("cyberNotesAPI",{windowMinimize:()=>e.ipcRenderer.invoke("window-minimize"),windowMaximizeToggle:()=>e.ipcRenderer.invoke("window-maximize-toggle"),windowClose:()=>e.ipcRenderer.invoke("window-close"),openDevTools:()=>e.ipcRenderer.invoke("open-dev-tools"),openDataFolder:()=>e.ipcRenderer.invoke("open-data-folder"),replaceMisspelling:r=>e.ipcRenderer.invoke("replace-misspelling",r),addToDictionary:r=>e.ipcRenderer.invoke("add-to-dictionary",r),onContextMenuData:r=>{const n=(o,t)=>r(t);return e.ipcRenderer.on("context-menu-data",n),()=>e.ipcRenderer.removeListener("context-menu-data",n)},onStatusBarUrl:r=>{const n=(o,t)=>r(t);return e.ipcRenderer.on("status-bar-url",n),()=>e.ipcRenderer.removeListener("status-bar-url",n)},hasPassword:()=>e.ipcRenderer.invoke("auth:hasPassword"),setPassword:r=>e.ipcRenderer.invoke("auth:setPassword",r),verifyPassword:r=>e.ipcRenderer.invoke("auth:verifyPassword",r),removePassword:()=>e.ipcRenderer.invoke("auth:removePassword"),getSetting:r=>e.ipcRenderer.invoke("settings:get",r),setSetting:(r,n)=>e.ipcRenderer.invoke("settings:set",r,n),setAutoStart:r=>e.ipcRenderer.invoke("settings:setAutoStart",r),getAutoStart:()=>e.ipcRenderer.invoke("settings:getAutoStart"),getFolders:()=>e.ipcRenderer.invoke("folders:getAll"),createFolder:r=>e.ipcRenderer.invoke("folders:create",r),updateFolder:r=>e.ipcRenderer.invoke("folders:update",r),deleteFolder:r=>e.ipcRenderer.invoke("folders:delete",r),getAllNotes:()=>e.ipcRenderer.invoke("notes:getAll"),getNotesByFolder:r=>e.ipcRenderer.invoke("notes:getByFolder",r),saveNote:r=>e.ipcRenderer.invoke("notes:save",r),deleteNote:r=>e.ipcRenderer.invoke("notes:delete",r),searchNotes:r=>e.ipcRenderer.invoke("notes:search",r),selectAndSaveImage:()=>e.ipcRenderer.invoke("images:selectAndSave"),exportData:()=>e.ipcRenderer.invoke("data:export"),importData:()=>e.ipcRenderer.invoke("data:import")});
+"use strict";
+const electron = require("electron");
+electron.contextBridge.exposeInMainWorld("cyberNotesAPI", {
+  // -- Ventana --
+  windowMinimize: () => electron.ipcRenderer.invoke("window-minimize"),
+  windowMaximizeToggle: () => electron.ipcRenderer.invoke("window-maximize-toggle"),
+  windowClose: () => electron.ipcRenderer.invoke("window-close"),
+  openDevTools: () => electron.ipcRenderer.invoke("open-dev-tools"),
+  openDataFolder: () => electron.ipcRenderer.invoke("open-data-folder"),
+  replaceMisspelling: (word) => electron.ipcRenderer.invoke("replace-misspelling", word),
+  addToDictionary: (word) => electron.ipcRenderer.invoke("add-to-dictionary", word),
+  onContextMenuData: (callback) => {
+    const listener = (_e, data) => callback(data);
+    electron.ipcRenderer.on("context-menu-data", listener);
+    return () => electron.ipcRenderer.removeListener("context-menu-data", listener);
+  },
+  onStatusBarUrl: (callback) => {
+    const listener = (_e, url) => callback(url);
+    electron.ipcRenderer.on("status-bar-url", listener);
+    return () => electron.ipcRenderer.removeListener("status-bar-url", listener);
+  },
+  // -- Auth --
+  hasPassword: () => electron.ipcRenderer.invoke("auth:hasPassword"),
+  setPassword: (password) => electron.ipcRenderer.invoke("auth:setPassword", password),
+  verifyPassword: (password) => electron.ipcRenderer.invoke("auth:verifyPassword", password),
+  removePassword: () => electron.ipcRenderer.invoke("auth:removePassword"),
+  // -- Settings --
+  getSetting: (key) => electron.ipcRenderer.invoke("settings:get", key),
+  setSetting: (key, value) => electron.ipcRenderer.invoke("settings:set", key, value),
+  setAutoStart: (enable) => electron.ipcRenderer.invoke("settings:setAutoStart", enable),
+  getAutoStart: () => electron.ipcRenderer.invoke("settings:getAutoStart"),
+  // -- Folders --
+  getFolders: () => electron.ipcRenderer.invoke("folders:getAll"),
+  createFolder: (folder) => electron.ipcRenderer.invoke("folders:create", folder),
+  updateFolder: (folder) => electron.ipcRenderer.invoke("folders:update", folder),
+  deleteFolder: (id) => electron.ipcRenderer.invoke("folders:delete", id),
+  // -- Notes --
+  getAllNotes: () => electron.ipcRenderer.invoke("notes:getAll"),
+  getNotesByFolder: (folderId) => electron.ipcRenderer.invoke("notes:getByFolder", folderId),
+  saveNote: (note) => electron.ipcRenderer.invoke("notes:save", note),
+  deleteNote: (id) => electron.ipcRenderer.invoke("notes:delete", id),
+  searchNotes: (query) => electron.ipcRenderer.invoke("notes:search", query),
+  // -- Images --
+  selectAndSaveImage: () => electron.ipcRenderer.invoke("images:selectAndSave"),
+  // -- Import / Export --
+  exportData: () => electron.ipcRenderer.invoke("data:export"),
+  importData: () => electron.ipcRenderer.invoke("data:import")
+});

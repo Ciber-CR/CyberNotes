@@ -385,7 +385,7 @@ export default function NoteEditor({ note, onSave, onCreateNote, layoutMode, onT
 
         <div 
           className={showLineCounter ? 'show-line-numbers' : ''}
-          style={{ position: 'relative', cursor: 'text' }}
+          style={{ position: 'relative', cursor: 'text', flex: '1 0 auto', display: 'flex', flexDirection: 'column' }}
           onClick={(e) => {
             if (editor && e.target === e.currentTarget) {
               editor.commands.focus('end');
@@ -407,12 +407,12 @@ export default function NoteEditor({ note, onSave, onCreateNote, layoutMode, onT
               readOnly
               style={{
                 width: '100%', height: '100%', padding: '0 48px 32px', background: 'transparent',
-                color: 'var(--accent-light)', fontFamily: 'var(--font-mono)', fontSize: 13,
-                border: 'none', outline: 'none', resize: 'none',
+                color: 'var(--accent-light)', fontFamily: 'var(--font-mono)', fontSize: 'calc(15px * var(--ui-scale))', lineHeight: 1.3,
+                border: 'none', outline: 'none', resize: 'none', flex: '1 0 auto',
               }}
             />
           ) : (
-            editor && <EditorContent editor={editor} style={{ minHeight: '100%', width: '100%' }} />
+            editor && <EditorContent editor={editor} style={{ minHeight: '100%', width: '100%', flex: '1 0 auto' }} />
           )}
 
           {/* Browser-like Link Hover Preview */}
@@ -447,27 +447,28 @@ export default function NoteEditor({ note, onSave, onCreateNote, layoutMode, onT
           )}
         </div>
 
-        {showLineCounter && (
-          <div style={{
-            padding: '4px 16px',
-            background: 'var(--bg-notelist)',
-            borderTop: '1px solid var(--border)',
-            display: 'flex',
-            justifyContent: 'flex-end',
-            gap: 16,
-            fontSize: 10,
-            color: 'var(--text-muted)',
-            fontFamily: 'var(--font-mono)',
-            letterSpacing: 0.5,
-            opacity: 0.8,
-            flexShrink: 0
-          }}>
-            <span>LÍNEA: {lineInfo.line}</span>
-            <span>COL: {lineInfo.col}</span>
-            <span>TOTAL: {lineInfo.total} LÍNEAS</span>
-          </div>
-        )}
       </div>
+
+      {showLineCounter && (
+        <div style={{
+          padding: '4px 16px',
+          background: 'var(--bg-notelist)',
+          borderTop: '1px solid var(--border)',
+          display: 'flex',
+          justifyContent: 'flex-end',
+          gap: 16,
+          fontSize: 10,
+          color: 'var(--text-muted)',
+          fontFamily: 'var(--font-mono)',
+          letterSpacing: 0.5,
+          opacity: 0.8,
+          flexShrink: 0
+        }}>
+          <span>LÍNEA: {lineInfo.line}</span>
+          <span>COL: {lineInfo.col}</span>
+          <span>TOTAL: {lineInfo.total} LÍNEAS</span>
+        </div>
+      )}
 
       {contextMenu && editor && createPortal(
         <div 
