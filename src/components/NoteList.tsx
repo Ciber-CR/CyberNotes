@@ -13,6 +13,7 @@ interface Props {
   onDeleteNote: (id: string) => void;
   onTogglePin: (note: Note) => void;
   onMoveNote: (noteId: string, folderId: string | null) => void;
+  onRenameNote: (id: string, title: string) => void;
   selectedFolder: Folder | null;
   searchQuery: string;
 }
@@ -77,12 +78,16 @@ type ViewMode = 'normal' | 'compact';
 
 export default function NoteList({
   notes: initialNotes, folders, selectedNoteId, onSelectNote, onCreateNote,
-  onDeleteNote, onTogglePin, onMoveNote, selectedFolder, searchQuery,
+  onDeleteNote, onTogglePin, onMoveNote, onRenameNote, selectedFolder, searchQuery,
 }: Props) {
   const [sortBy, setSortBy] = useState<'updated' | 'created' | 'alpha' | 'alpha-desc'>('updated');
   const [viewMode, setViewMode] = useState<ViewMode>('normal');
   const [showSortMenu, setShowSortMenu] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number, note: Note } | null>(null);
+  const [isHovering, setIsHovering] = useState(false);
+  const [hiddenCount, setHiddenCount] = useState(0);
+  const [renameTarget, setRenameTarget] = useState<Note | null>(null);
+  const [renameInput, setRenameInput] = useState('');
   const listRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -100,6 +105,29 @@ export default function NoteList({
     return b.title.localeCompare(a.title);
   });
 
+  // Calcular notas ocultas debajo del scroll
+  useEffect(() => {
+    const el = listRef.current;
+    if (!el || sortedNotes.length === 0) return;
+    const update = () => {
+      let remaining = el.scrollHeight - el.scrollTop - el.clientHeight;
+      if (remaining > 10) {
+        let ratio = remaining / el.scrollHeight;
+        let hidden = Math.max(1, Math.round(ratio * sortedNotes.length));
+        setHiddenCount(Math.min(hidden, sortedNotes.length));
+      } else {
+        setHiddenCount(0);
+      }
+    };
+    update();
+    el.addEventListener('scroll', update);
+    window.addEventListener('resize', update);
+    return () => {
+      el.removeEventListener('scroll', update);
+      window.removeEventListener('resize', update);
+    };
+  }, [sortedNotes.length]);
+
   const headerTitle = searchQuery
     ? `Resultados (${initialNotes.length})`
     : selectedFolder
@@ -115,7 +143,11 @@ export default function NoteList({
       flexDirection: 'column',
       flexShrink: 0,
       overflow: 'hidden',
-    }}>
+      position: 'relative',
+    }}
+      onMouseEnter={() => setIsHovering(true)}
+      onMouseLeave={() => setIsHovering(false)}
+    >
       {/* Header */}
       <div style={{
         padding: '14px 14px 8px',
@@ -205,7 +237,7 @@ export default function NoteList({
             </button>
           </div>
           
-          <span style={{ fontSize: 'calc(10.5px * var(--ui-scale))', color: 'var(--text-muted)', opacity: 0.7 }}>
+          <span style={{ fontSize: 'calc(12px * var(--ui-scale))', color: 'var(--text-secondary)', fontWeight: 500 }}>
             {sortedNotes.length} {sortedNotes.length === 1 ? 'nota' : 'notas'}
           </span>
         </div>
@@ -213,36 +245,37 @@ export default function NoteList({
 
       <div className="divider" />
 
-      <div ref={listRef} style={{ flex: 1, overflowY: 'auto' }}>
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={selectedFolder?.id || 'all'}
-            initial={{ opacity: 0, scale: 0.97 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.97 }}
-            transition={{ duration: 0.15 }}
-            style={{ minHeight: '100%', display: 'flex', flexDirection: 'column' }}
-          >
-            {sortedNotes.length === 0 ? (
-              <div style={{
-                display: 'flex', flexDirection: 'column', alignItems: 'center',
-                justifyContent: 'center', flex: 1, minHeight: 200, gap: 12, color: 'var(--text-muted)',
-              }}>
-                {searchQuery
-                  ? <><Search size={32} opacity={0.4} /><span style={{ fontSize: 13 }}>Sin resultados</span></>
-                  : <><span style={{ fontSize: 32, opacity: 0.3 }}>📝</span><span style={{ fontSize: 13 }}>Sin notas aún</span></>
-                }
-              </div>
-            ) : (
-              sortedNotes.map(note => (
-                <NoteItem
-                  key={note.id}
-                  note={note}
-                  viewMode={viewMode}
-                  isSelected={note.id === selectedNoteId}
-                  onClick={() => onSelectNote(note.id)}
-                  onDelete={() => onDeleteNote(note.id)}
-                  onContextMenu={(e) => {
+      <div style={{ position: 'relative', flex: 1, overflow: 'hidden' }}>
+        <div ref={listRef} style={{ height: '100%', overflowY: 'auto' }}>
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={selectedFolder?.id || 'all'}
+              initial={{ opacity: 0, scale: 0.97 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.97 }}
+              transition={{ duration: 0.15 }}
+              style={{ minHeight: '100%', display: 'flex', flexDirection: 'column' }}
+            >
+              {sortedNotes.length === 0 ? (
+                <div style={{
+                  display: 'flex', flexDirection: 'column', alignItems: 'center',
+                  justifyContent: 'center', flex: 1, minHeight: 200, gap: 12, color: 'var(--text-muted)',
+                }}>
+                  {searchQuery
+                    ? <><Search size={32} opacity={0.4} /><span style={{ fontSize: 13 }}>Sin resultados</span></>
+                    : <><span style={{ fontSize: 32, opacity: 0.3 }}>📝</span><span style={{ fontSize: 13 }}>Sin notas aún</span></>
+                  }
+                </div>
+              ) : (
+                sortedNotes.map(note => (
+                  <NoteItem
+                    key={note.id}
+                    note={note}
+                    viewMode={viewMode}
+                    isSelected={note.id === selectedNoteId}
+                    onClick={() => onSelectNote(note.id)}
+                    onDelete={() => onDeleteNote(note.id)}
+                    onContextMenu={(e) => {
                     e.preventDefault();
                     let safeX = e.clientX;
                     let safeY = e.clientY;
@@ -257,7 +290,56 @@ export default function NoteList({
             )}
           </motion.div>
         </AnimatePresence>
+        </div>
+
+        {/* X Más pill */}
+        <div style={{
+          position: 'absolute',
+          bottom: 12,
+          left: '50%',
+          transform: 'translateX(-50%)',
+          opacity: isHovering && hiddenCount > 0 ? 1 : 0,
+          visibility: isHovering && hiddenCount > 0 ? 'visible' : 'hidden',
+          transition: 'opacity 0.25s, visibility 0.25s',
+          zIndex: 10,
+          pointerEvents: isHovering && hiddenCount > 0 ? 'auto' : 'none',
+        }}>
+          <button
+            onClick={() => {
+              let el = listRef.current;
+              if (el) el.scrollBy({ top: el.clientHeight * 0.7, behavior: 'smooth' });
+            }}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '6px 16px',
+              borderRadius: 8,
+              border: '1px solid var(--accent)',
+              background: 'var(--bg-surface)',
+              color: 'var(--accent-light)',
+              cursor: 'pointer',
+              fontWeight: 600,
+              fontSize: 12,
+              whiteSpace: 'nowrap',
+              animation: 'cyber-border-pulse 3s ease-in-out infinite',
+              boxShadow: '0 0 4px var(--accent-glow)',
+            }}
+            onMouseDown={(e) => e.preventDefault()}
+          >
+            +{hiddenCount} más
+          </button>
+        </div>
       </div>
+
+      <style>{`
+        @keyframes cyber-border-pulse {
+          0%, 100% { border-color: var(--accent); }
+          25%      { border-color: var(--pulse-1); }
+          50%      { border-color: var(--pulse-2); }
+          75%      { border-color: var(--pulse-3); }
+        }
+      `}</style>
 
       {/* Menú Contextual */}
       {contextMenu && createPortal(
@@ -287,6 +369,14 @@ export default function NoteList({
             onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
           >
             Abrir nota
+          </button>
+          <button
+            onClick={() => { setRenameTarget(contextMenu.note); setRenameInput(contextMenu.note.title); setContextMenu(null); }}
+            style={{ textAlign: 'left', padding: '6px 10px', fontSize: 12, background: 'transparent', color: 'var(--text-primary)', border: 'none', borderRadius: 4, cursor: 'pointer' }}
+            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'; }}
+            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+          >
+            Renombrar
           </button>
           <button
             onClick={() => onTogglePin(contextMenu.note)}
@@ -336,6 +426,45 @@ export default function NoteList({
           >
             Eliminar
           </button>
+        </div>,
+        document.body
+      )}
+
+      {/* Modal Renombrar */}
+      {renameTarget && createPortal(
+        <div style={{
+          position: 'fixed', inset: 0, background: 'var(--bg-editor-glass)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10000,
+        }} onClick={() => setRenameTarget(null)}>
+          <div style={{
+            background: 'var(--bg-modal)', padding: 24, borderRadius: 'var(--radius-lg)',
+            width: 400, display: 'flex', flexDirection: 'column', gap: 16, border: '1px solid var(--border)',
+            boxShadow: '0 16px 40px rgba(0,0,0,0.4)',
+          }} onClick={e => e.stopPropagation()}>
+            <h3 style={{ margin: 0, fontSize: 16, color: 'var(--text-primary)', fontWeight: 600 }}>Renombrar nota</h3>
+            <input
+              autoFocus
+              type="text"
+              value={renameInput}
+              onChange={e => setRenameInput(e.target.value)}
+              className="input"
+              placeholder="Nombre de la nota"
+              onKeyDown={e => {
+                if (e.key === 'Enter') {
+                  onRenameNote(renameTarget.id, renameInput);
+                  setRenameTarget(null);
+                }
+                if (e.key === 'Escape') setRenameTarget(null);
+              }}
+            />
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button className="btn btn-ghost" onClick={() => setRenameTarget(null)}>Cancelar</button>
+              <button className="btn btn-primary" onClick={() => {
+                onRenameNote(renameTarget.id, renameInput);
+                setRenameTarget(null);
+              }}>Guardar</button>
+            </div>
+          </div>
         </div>,
         document.body
       )}
@@ -394,7 +523,7 @@ function NoteItem({ note, viewMode, isSelected, onClick, onDelete, onContextMenu
           {viewMode === 'normal' && (
             <p style={{
               fontSize: 'calc(11.5px * var(--ui-scale))',
-              color: 'var(--text-muted)',
+              color: 'var(--text-secondary)',
               overflow: 'hidden',
               textOverflow: 'ellipsis',
               display: '-webkit-box',
@@ -410,8 +539,8 @@ function NoteItem({ note, viewMode, isSelected, onClick, onDelete, onContextMenu
 
           <div style={{ 
             fontSize: 'calc(10.5px * var(--ui-scale))', 
-            color: 'var(--text-muted)', 
-            opacity: 0.8,
+            color: 'var(--text-secondary)', 
+            opacity: 0.9,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between'

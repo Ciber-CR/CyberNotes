@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { ThemeId } from './types';
+import { applyThemeVars } from './themes';
 import LockScreen from './components/LockScreen';
 import MainApp from './components/MainApp';
 
@@ -8,16 +9,19 @@ type AppView = 'loading' | 'lock' | 'app';
 export default function App() {
   const [view, setView] = useState<AppView>('loading');
   const [theme, setTheme] = useState<ThemeId>('cyber-dark');
+  const [colorIntensity, setColorIntensity] = useState(50);
 
-  // Cargar tema guardado
+  // Cargar tema e intensidad guardados
   useEffect(() => {
     const init = async () => {
       try {
         const savedTheme = await window.cyberNotesAPI.getSetting('theme');
-        if (savedTheme) {
-          setTheme(savedTheme as ThemeId);
-          applyTheme(savedTheme as ThemeId);
-        }
+        const savedIntensity = await window.cyberNotesAPI.getSetting('colorIntensity');
+        let t = savedTheme ? (savedTheme as ThemeId) : 'cyber-dark';
+        let i = savedIntensity ? parseInt(savedIntensity) : 50;
+        setTheme(t);
+        setColorIntensity(i);
+        applyThemeVars(t, i);
 
         const hasPassword = await window.cyberNotesAPI.hasPassword();
         setView(hasPassword ? 'lock' : 'app');
@@ -29,15 +33,17 @@ export default function App() {
     init();
   }, []);
 
-  const applyTheme = (t: ThemeId) => {
-    document.documentElement.setAttribute('data-theme', t === 'cyber-dark' ? '' : t);
-  };
-
   const handleThemeChange = useCallback(async (t: ThemeId) => {
     setTheme(t);
-    applyTheme(t);
+    applyThemeVars(t, colorIntensity);
     await window.cyberNotesAPI.setSetting('theme', t);
-  }, []);
+  }, [colorIntensity]);
+
+  const handleIntensityChange = useCallback(async (v: number) => {
+    setColorIntensity(v);
+    applyThemeVars(theme, v);
+    await window.cyberNotesAPI.setSetting('colorIntensity', v.toString());
+  }, [theme]);
 
   const handleUnlock = () => setView('app');
 
@@ -67,6 +73,8 @@ export default function App() {
     <MainApp
       currentTheme={theme}
       onThemeChange={handleThemeChange}
+      colorIntensity={colorIntensity}
+      onIntensityChange={handleIntensityChange}
       onLock={handleLock}
     />
   );

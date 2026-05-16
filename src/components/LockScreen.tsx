@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Lock, Eye, EyeOff, Shield } from 'lucide-react';
+import { Lock, Eye, EyeOff, Shield, Minus, Square, X } from 'lucide-react';
 
 interface Props {
   onUnlock: () => void;
@@ -89,6 +89,43 @@ export default function LockScreen({ onUnlock }: Props) {
           zIndex: 1,
         }}
       >
+        {/* Window Controls */}
+        <div style={{
+          position: 'absolute',
+          top: 12,
+          right: 12,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 4,
+        }}>
+          <button
+            className="btn-icon"
+            onClick={() => window.cyberNotesAPI.windowMinimize()}
+            title="Minimizar"
+            style={{ width: 26, height: 26 }}
+          >
+            <Minus size={12} />
+          </button>
+          <button
+            className="btn-icon"
+            onClick={() => window.cyberNotesAPI.windowMaximizeToggle()}
+            title="Maximizar/Restaurar"
+            style={{ width: 26, height: 26 }}
+          >
+            <Square size={11} />
+          </button>
+          <button
+            className="btn-icon"
+            onClick={() => window.cyberNotesAPI.windowClose()}
+            title="Cerrar"
+            style={{ width: 26, height: 26, color: 'var(--text-muted)' }}
+            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = 'var(--danger)'; }}
+            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)'; }}
+          >
+            <X size={13} />
+          </button>
+        </div>
+
         {/* Logo */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
           <div style={{

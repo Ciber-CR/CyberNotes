@@ -10,10 +10,12 @@ import { motion, AnimatePresence } from 'motion/react';
 interface Props {
   currentTheme: ThemeId;
   onThemeChange: (t: ThemeId) => void;
+  colorIntensity: number;
+  onIntensityChange: (v: number) => void;
   onLock: () => void;
 }
 
-export default function MainApp({ currentTheme, onThemeChange, onLock }: Props) {
+export default function MainApp({ currentTheme, onThemeChange, colorIntensity, onIntensityChange, onLock }: Props) {
   const [folders, setFolders] = useState<Folder[]>([]);
   const [notes, setNotes] = useState<Note[]>([]);
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
@@ -39,6 +41,7 @@ export default function MainApp({ currentTheme, onThemeChange, onLock }: Props) 
   const [autoLockMinutes, setAutoLockMinutes] = useState(0);
   const [rememberLastNote, setRememberLastNote] = useState(false);
   const [showLineCounter, setShowLineCounter] = useState(false);
+  const [autosaveEnabled, setAutosaveEnabled] = useState(true);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
@@ -156,6 +159,9 @@ export default function MainApp({ currentTheme, onThemeChange, onLock }: Props) 
     const lineCounter = await window.cyberNotesAPI.getSetting('show_line_counter');
     setShowLineCounter(lineCounter === 'true');
 
+    const autosave = await window.cyberNotesAPI.getSetting('autosave_enabled');
+    if (autosave !== null) setAutosaveEnabled(autosave === 'true');
+
     if (isRemember) {
       const lastId = await window.cyberNotesAPI.getSetting('last_note_id');
       if (lastId) setSelectedNoteId(lastId);
@@ -188,6 +194,12 @@ export default function MainApp({ currentTheme, onThemeChange, onLock }: Props) 
     const n = await window.cyberNotesAPI.getNotesByFolder(folderId);
     setNotes(n);
     if (n.length > 0) setSelectedNoteId(n[0].id);
+  };
+
+  const handleRenameNote = async (id: string, title: string) => {
+    const note = notes.find(n => n.id === id);
+    if (!note) return;
+    handleSaveNote({ ...note, title });
   };
 
   const handleSearch = async (q: string) => {
@@ -228,8 +240,8 @@ export default function MainApp({ currentTheme, onThemeChange, onLock }: Props) 
 
   const handleSaveNote = useCallback(async (note: Note) => {
     const updated = { ...note, updated_at: new Date().toISOString() };
-    await window.cyberNotesAPI.saveNote(updated);
     setNotes(prev => prev.map(n => n.id === updated.id ? updated : n));
+    await window.cyberNotesAPI.saveNote(updated);
   }, []);
 
   const handleDeleteNote = async (id: string) => {
@@ -328,6 +340,11 @@ export default function MainApp({ currentTheme, onThemeChange, onLock }: Props) 
     await window.cyberNotesAPI.setSetting('show_line_counter', v.toString());
   };
 
+  const handleAutosaveEnabledChange = async (v: boolean) => {
+    setAutosaveEnabled(v);
+    await window.cyberNotesAPI.setSetting('autosave_enabled', v.toString());
+  };
+
   const selectedNote = notes.find(n => n.id === selectedNoteId) ?? null;
 
   const startDragSidebar = (e: React.MouseEvent) => {
@@ -401,6 +418,11 @@ export default function MainApp({ currentTheme, onThemeChange, onLock }: Props) 
               folders={folders}
               selectedFolderId={selectedFolderId}
               noteCount={notes.length}
+              recentNotes={[...notes].sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()).slice(0, 5)}
+              onSelectNote={(id) => {
+                let note = notes.find(n => n.id === id);
+                if (note) { setSelectedNoteId(id); setSelectedFolderId(note.folder_id); }
+              }}
               onSelectFolder={handleSelectFolder}
               onCreateFolder={handleCreateFolder}
               onUpdateFolder={handleUpdateFolder}
@@ -432,6 +454,7 @@ export default function MainApp({ currentTheme, onThemeChange, onLock }: Props) 
               onDeleteNote={handleDeleteNote}
               onTogglePin={handleTogglePin}
               onMoveNote={handleMoveNote}
+              onRenameNote={handleRenameNote}
               selectedFolder={folders.find(f => f.id === selectedFolderId) ?? null}
               searchQuery={searchQuery}
             />
@@ -452,6 +475,7 @@ export default function MainApp({ currentTheme, onThemeChange, onLock }: Props) 
           layoutMode={layoutMode}
           onToggleLayout={() => setLayoutMode(prev => prev === 1 ? 3 : prev - 1 as any)}
           showLineCounter={showLineCounter}
+          autosaveEnabled={autosaveEnabled}
         />
       </div>
 
@@ -459,6 +483,8 @@ export default function MainApp({ currentTheme, onThemeChange, onLock }: Props) 
         <SettingsModal
           currentTheme={currentTheme}
           onThemeChange={onThemeChange}
+          colorIntensity={colorIntensity}
+          onIntensityChange={onIntensityChange}
           uiScale={uiScale}
           onScaleChange={handleScaleChange}
           bgImage={bgImage}
@@ -473,6 +499,8 @@ export default function MainApp({ currentTheme, onThemeChange, onLock }: Props) 
           onRememberLastNoteChange={handleRememberLastNoteChange}
           showLineCounter={showLineCounter}
           onShowLineCounterChange={handleShowLineCounterChange}
+          autosaveEnabled={autosaveEnabled}
+          onAutosaveEnabledChange={handleAutosaveEnabledChange}
           onClose={() => setShowSettings(false)}
           onLock={onLock}
         />

@@ -1,14 +1,17 @@
 import { useState, useRef, useEffect } from 'react';
-import { Folder } from '../types';
+import { createPortal } from 'react-dom';
+import { Folder, Note } from '../types';
 import {
   Plus, FolderOpen, Settings, Lock, Search, X,
-  ChevronRight, Pencil, Trash2, FileText,
+  ChevronRight, Pencil, Trash2, FileText, Clock,
 } from 'lucide-react';
 
 interface Props {
   folders: Folder[];
   selectedFolderId: string | null;
   noteCount: number;
+  recentNotes: Note[];
+  onSelectNote: (id: string) => void;
   onSelectFolder: (id: string | null) => void;
   onCreateFolder: (name: string, icon: string, color: string) => void;
   onUpdateFolder: (folder: Folder) => void;
@@ -26,8 +29,22 @@ const FOLDER_COLORS = [
   '#ef4444', '#ec4899', '#8b5cf6', '#14b8a6',
 ];
 
+function timeAgo(iso: string): string {
+  let diff = Date.now() - new Date(iso).getTime();
+  let mins = Math.round(diff / 60000);
+  if (mins < 1) return 'Ahora';
+  if (mins < 60) return `hace ${mins} min`;
+  let hours = Math.floor(mins / 60);
+  if (hours < 24) return `hace ${hours}h`;
+  let days = Math.floor(hours / 24);
+  if (days < 7) return `hace ${days} día${days > 1 ? 's' : ''}`;
+  let weeks = Math.floor(days / 7);
+  if (weeks < 5) return `hace ${weeks} sem`;
+  return new Date(iso).toLocaleDateString('es-ES', { month: 'short', day: 'numeric' });
+}
+
 export default function Sidebar({
-  folders, selectedFolderId, noteCount,
+  folders, selectedFolderId, noteCount, recentNotes, onSelectNote,
   onSelectFolder, onCreateFolder, onUpdateFolder, onDeleteFolder,
   onOpenSettings, onLock, searchQuery, onSearch, onMoveNote,
 }: Props) {
@@ -37,6 +54,8 @@ export default function Sidebar({
   const [newFolderColor, setNewFolderColor] = useState('#7c3aed');
   const [editingFolder, setEditingFolder] = useState<Folder | null>(null);
   const [contextMenu, setContextMenu] = useState<{ folder: Folder; x: number; y: number } | null>(null);
+  const [showRecent, setShowRecent] = useState(false);
+  const recentBtnRef = useRef<HTMLButtonElement>(null);
   const newFolderInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -49,6 +68,22 @@ export default function Sidebar({
     window.addEventListener('click', handler);
     return () => window.removeEventListener('click', handler);
   }, []);
+
+  // Cerrar menú recientes al hacer click fuera
+  const recentMenuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!showRecent) return;
+    const handler = (e: MouseEvent) => {
+      if (
+        recentBtnRef.current && !recentBtnRef.current.contains(e.target as Node) &&
+        recentMenuRef.current && !recentMenuRef.current.contains(e.target as Node)
+      ) {
+        setShowRecent(false);
+      }
+    };
+    setTimeout(() => document.addEventListener('click', handler), 0);
+    return () => document.removeEventListener('click', handler);
+  }, [showRecent]);
 
   const handleCreateFolder = () => {
     if (!newFolderName.trim()) return;
@@ -305,6 +340,15 @@ export default function Sidebar({
       <div className="divider" />
       <div style={{ padding: '8px', display: 'flex', gap: 4, justifyContent: 'space-between' }}>
         <button
+          ref={recentBtnRef}
+          className="btn btn-ghost"
+          onClick={(e) => { e.stopPropagation(); setShowRecent(prev => !prev); }}
+          title="Notas recientes"
+          style={{ padding: '7px 10px' }}
+        >
+          <Clock size={14} />
+        </button>
+        <button
           className="btn btn-ghost"
           onClick={onOpenSettings}
           style={{ flex: 1, fontSize: 'calc(12px * var(--ui-scale))', padding: '7px', gap: 6 }}
@@ -321,6 +365,84 @@ export default function Sidebar({
           <Lock size={14} />
         </button>
       </div>
+
+      {/* Drop-up recientes */}
+      {showRecent && recentBtnRef.current && createPortal(
+        <div
+          ref={recentMenuRef}
+          className="glass-effect"
+          style={{
+            position: 'fixed',
+            left: recentBtnRef.current.getBoundingClientRect().left,
+            bottom: window.innerHeight - recentBtnRef.current.getBoundingClientRect().top + 4,
+            width: 240,
+            background: 'var(--bg-modal)',
+            border: '1px solid var(--border)',
+            borderRadius: 'var(--radius-md)',
+            padding: 6,
+            boxShadow: '0 -8px 24px rgba(0,0,0,0.4)',
+            zIndex: 100000,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 2,
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', padding: '6px 8px 4px', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+            Últimas notas
+          </div>
+          {recentNotes.length === 0 ? (
+            <div style={{ fontSize: 12, color: 'var(--text-muted)', padding: '12px 8px', textAlign: 'center' }}>
+              Sin notas
+            </div>
+          ) : (
+            recentNotes.map((note, i) => (
+              <div key={note.id}>
+                {i > 0 && <div style={{ height: 1, background: 'var(--border)', margin: '2px 0' }} />}
+                <button
+                  onClick={() => { onSelectNote(note.id); setShowRecent(false); }}
+                  onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'; }}
+                  onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'flex-start',
+                    gap: 2,
+                    padding: '8px 10px',
+                    fontSize: 12,
+                    background: 'transparent',
+                    color: 'var(--text-primary)',
+                    border: 'none',
+                    borderRadius: 6,
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                    width: '100%',
+                  }}
+                >
+                  <span style={{
+                    fontWeight: 500,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                    width: '100%',
+                  }}>
+                    {note.title || 'Sin título'}
+                  </span>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'flex-end' }}>
+                    <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+                      {timeAgo(note.updated_at)}
+                    </span>
+                    <span style={{ fontSize: 10, color: 'var(--text-muted)', opacity: 0.75 }}>
+                      {new Date(note.updated_at).toLocaleDateString('es-ES', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                    </span>
+                  </div>
+                </button>
+              </div>
+            ))
+          )}
+        </div>,
+        document.body
+      )}
 
       {/* Context Menu */}
       {contextMenu && (

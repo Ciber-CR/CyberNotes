@@ -1,10 +1,13 @@
 import { useState, useEffect, useRef } from 'react';
 import { ThemeId } from '../types';
-import { X, Lock, FolderOpen, Shield, Palette, Monitor, Trash2, Eye, EyeOff, Download, Upload } from 'lucide-react';
+import { THEMES, isColorfulTheme, getPreviewColor } from '../themes';
+import { X, Lock, Shield, FolderOpen, Palette, Monitor, Trash2, Eye, EyeOff, Download, Upload } from 'lucide-react';
 
 interface Props {
   currentTheme: ThemeId;
   onThemeChange: (t: ThemeId) => void;
+  colorIntensity: number;
+  onIntensityChange: (v: number) => void;
   uiScale: number;
   onScaleChange: (s: number) => void;
   bgImage: string | null;
@@ -19,28 +22,21 @@ interface Props {
   onRememberLastNoteChange: (v: boolean) => void;
   showLineCounter: boolean;
   onShowLineCounterChange: (v: boolean) => void;
+  autosaveEnabled: boolean;
+  onAutosaveEnabledChange: (v: boolean) => void;
   onClose: () => void;
   onLock: () => void;
 }
 
-const THEMES = [
-  { id: 'cyber-dark' as ThemeId, name: 'Cyber Dark', emoji: '🌌', preview: '#7c3aed' },
-  { id: 'midnight' as ThemeId, name: 'Midnight', emoji: '🌃', preview: '#06b6d4' },
-  { id: 'forest' as ThemeId, name: 'Forest', emoji: '🌿', preview: '#10b981' },
-  { id: 'graphite' as ThemeId, name: 'Graphite', emoji: '📽️', preview: '#9ca3af' },
-  { id: 'neon' as ThemeId, name: 'Cyber Neon', emoji: '🎆', preview: '#f0abfc' },
-  { id: 'cyber-custom' as ThemeId, name: 'Cyber Custom', emoji: '🖼️', preview: '#c084fc' },
-  { id: 'light' as ThemeId, name: 'Light', emoji: '☀️', preview: '#4f46e5' },
-];
-
 type Tab = 'general' | 'security' | 'about';
 
 export default function SettingsModal({ 
-  currentTheme, onThemeChange, uiScale, onScaleChange, 
+  currentTheme, onThemeChange, colorIntensity, onIntensityChange, uiScale, onScaleChange, 
   bgImage, onBgImageChange, glassBlur, onBlurChange, bgOpacity, onOpacityChange,
   autoLockMinutes, onAutoLockChange,
   rememberLastNote, onRememberLastNoteChange,
   showLineCounter, onShowLineCounterChange,
+  autosaveEnabled, onAutosaveEnabledChange,
   onClose, onLock 
 }: Props) {
   const [tab, setTab] = useState<Tab>('general');
@@ -219,25 +215,25 @@ export default function SettingsModal({
                   {THEMES.map(theme => (
                     <button
                       key={theme.id}
-                      onClick={() => onThemeChange(theme.id)}
+                      onClick={() => onThemeChange(theme.id as ThemeId)}
                       style={{
                         padding: '14px 16px',
                         borderRadius: 'var(--radius-md)',
-                        border: currentTheme === theme.id ? `2px solid ${theme.preview}` : '1px solid var(--border)',
+                        border: currentTheme === theme.id ? `2px solid var(--accent)` : '1px solid var(--border)',
                         background: currentTheme === theme.id ? 'var(--accent-dim)' : 'var(--bg-surface)',
                         cursor: 'pointer',
                         display: 'flex',
                         alignItems: 'center',
                         gap: 10,
                         transition: 'all var(--transition)',
-                        boxShadow: currentTheme === theme.id ? `0 0 12px rgba(${theme.preview}, 0.3)` : 'none',
+                        boxShadow: currentTheme === theme.id ? '0 0 12px var(--accent-glow)' : 'none',
                       }}
                     >
                       <div style={{
                         width: 30,
                         height: 30,
                         borderRadius: 8,
-                        background: theme.preview,
+                        background: getPreviewColor(theme.id, currentTheme === theme.id ? colorIntensity : 50),
                         flexShrink: 0,
                         display: 'flex',
                         alignItems: 'center',
@@ -255,6 +251,38 @@ export default function SettingsModal({
                     </button>
                   ))}
                 </div>
+              </div>
+
+              <div style={{
+                padding: '16px',
+                background: 'var(--bg-surface)',
+                borderRadius: 'var(--radius-md)',
+                border: '1px solid var(--border)',
+                opacity: isColorfulTheme(currentTheme) ? 1 : 0.4,
+                pointerEvents: isColorfulTheme(currentTheme) ? 'auto' : 'none',
+                transition: 'opacity var(--transition)',
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                  <span style={{ fontSize: 13, color: 'var(--text-primary)', fontWeight: 500 }}>Intensidad de color</span>
+                  <span style={{ fontSize: 13, color: 'var(--accent-light)', fontWeight: 700, background: 'var(--accent-dim)', padding: '2px 8px', borderRadius: 4 }}>
+                    {colorIntensity}%
+                  </span>
+                </div>
+                <input 
+                  type="range" min="0" max="100" step="5" 
+                  value={colorIntensity}
+                  onChange={(e) => onIntensityChange(parseInt(e.target.value))}
+                  style={{ width: '100%', accentColor: 'var(--accent)' }}
+                />
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                  <span>Suave</span>
+                  <span>Intenso</span>
+                </div>
+                {!isColorfulTheme(currentTheme) && (
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 8, fontStyle: 'italic' }}>
+                    No aplica para {currentTheme === 'graphite' ? 'Graphite' : 'Light'}
+                  </div>
+                )}
               </div>
 
               <div className="divider" />
@@ -497,6 +525,37 @@ export default function SettingsModal({
                         height: 20,
                         appearance: 'none',
                         background: showLineCounter ? 'var(--accent)' : 'var(--border)',
+                        borderRadius: 10,
+                        position: 'relative',
+                        cursor: 'pointer',
+                        transition: 'background 0.2s'
+                      }}
+                    />
+                  </label>
+
+                  <label style={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    justifyContent: 'space-between',
+                    padding: '12px 16px',
+                    background: 'var(--bg-surface)',
+                    borderRadius: 'var(--radius-md)',
+                    border: '1px solid var(--border)',
+                    cursor: 'pointer'
+                  }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                      <span style={{ fontSize: 13, color: 'var(--text-primary)', fontWeight: 500 }}>Autoguardado</span>
+                      <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Guardar automáticamente al editar. Si se desactiva, usa el botón Guardar en el editor.</span>
+                    </div>
+                    <input 
+                      type="checkbox" 
+                      checked={autosaveEnabled}
+                      onChange={(e) => onAutosaveEnabledChange(e.target.checked)}
+                      style={{
+                        width: 40,
+                        height: 20,
+                        appearance: 'none',
+                        background: autosaveEnabled ? 'var(--accent)' : 'var(--border)',
                         borderRadius: 10,
                         position: 'relative',
                         cursor: 'pointer',

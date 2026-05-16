@@ -20,7 +20,7 @@ export interface Note {
   updated_at: string;
 }
 
-export type ThemeId = 'cyber-dark' | 'midnight' | 'forest' | 'light' | 'graphite' | 'neon' | 'cyber-custom';
+export type ThemeId = 'cyber-dark' | 'midnight' | 'forest' | 'light' | 'graphite' | 'neon';
 
 export interface Theme {
   id: ThemeId;
@@ -46,6 +46,8 @@ declare global {
       setPassword: (password: string) => Promise<boolean>;
       verifyPassword: (password: string) => Promise<boolean>;
       removePassword: () => Promise<boolean>;
+      // Unsaved Changes
+      setUnsavedChanges: (val: boolean) => Promise<void>;
       // Settings
       getSetting: (key: string) => Promise<string | null>;
       setSetting: (key: string, value: string) => Promise<boolean>;

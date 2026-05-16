@@ -14,7 +14,7 @@ import {
   Heading1, Heading2, List, ListOrdered, Link as LinkIcon,
   Image as ImageIcon, Highlighter, Quote, Minus, Code,
   Plus, Pin, AlignLeft, AlignCenter, AlignRight, Braces, PanelLeft,
-  Undo, Redo
+  Undo, Redo, Save
 } from 'lucide-react';
 
 interface Props {
@@ -24,6 +24,7 @@ interface Props {
   layoutMode: number;
   onToggleLayout: () => void;
   showLineCounter?: boolean;
+  autosaveEnabled?: boolean;
 }
 
 // Extensión personalizada para imagen con soporte de tamaño y alineación
@@ -84,9 +85,10 @@ const ToolbarBtn = ({
   </motion.button>
 );
 
-export default function NoteEditor({ note, onSave, onCreateNote, layoutMode, onToggleLayout, showLineCounter }: Props) {
+export default function NoteEditor({ note, onSave, onCreateNote, layoutMode, onToggleLayout, showLineCounter, autosaveEnabled = true }: Props) {
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const currentNoteRef = useRef<Note | null>(note);
+  // Sincronizar ref con cada render para que scheduleAutoSave siempre tenga la note actual
   const [pinned, setPinned] = useState(note?.pinned === 1);
   const [isRaw, setIsRaw] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number, linkHref?: string, suggestions?: string[], misspelledWord?: string } | null>(null);
@@ -94,6 +96,8 @@ export default function NoteEditor({ note, onSave, onCreateNote, layoutMode, onT
   const [hoveredLink, setHoveredLink] = useState<string | null>(null);
   const [inputContextMenu, setInputContextMenu] = useState<{ x: number, y: number } | null>(null);
   const [lineInfo, setLineInfo] = useState({ line: 1, col: 1, total: 1 });
+  const [localTitle, setLocalTitle] = useState(note?.title || '');
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
   useEffect(() => {
     const closeMenu = () => {
@@ -191,10 +195,25 @@ export default function NoteEditor({ note, onSave, onCreateNote, layoutMode, onT
     setLineInfo({ line: currentLine, col: currentCol, total: totalLines });
   };
 
+  const handleManualSave = useCallback(() => {
+    if (!editor || !note) return;
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    const html = editor.getHTML();
+    const preview = extractPreview(html);
+    onSave({ ...note, content: html, title: localTitle, preview });
+    setHasUnsavedChanges(false);
+  }, [editor, note, localTitle, onSave]);
+
+  // Sincronizar estado de cambios no guardados con el proceso principal
+  useEffect(() => {
+    window.cyberNotesAPI?.setUnsavedChanges(hasUnsavedChanges);
+  }, [hasUnsavedChanges]);
+
   // Actualizar editor cuando cambia la nota seleccionada
   useEffect(() => {
-    currentNoteRef.current = note;
     setPinned(note?.pinned === 1);
+    setLocalTitle(note?.title || '');
+    setHasUnsavedChanges(false);
 
     if (!editor || !note) return;
     if (saveTimer.current) clearTimeout(saveTimer.current);
@@ -216,21 +235,31 @@ export default function NoteEditor({ note, onSave, onCreateNote, layoutMode, onT
     setIsRaw(false);
   }, [note?.id, editor]);
 
+  // Sincronizar ref con la note prop cuando cambia (mismo id, nuevo ref)
+  useEffect(() => {
+    currentNoteRef.current = note;
+  }, [note]);
+
   const scheduleAutoSave = useCallback((html: string) => {
+    if (!autosaveEnabled) {
+      setHasUnsavedChanges(true);
+      return;
+    }
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
       const current = currentNoteRef.current;
       if (!current) return;
       const preview = extractPreview(html);
       onSave({ ...current, content: html, preview });
-    }, 500); // Más rápido
-  }, [onSave]);
+    }, 500);
+  }, [onSave, autosaveEnabled]);
 
   const handlePin = () => {
     if (!note) return;
     const newPinned = pinned ? 0 : 1;
     setPinned(!pinned);
     onSave({ ...note, pinned: newPinned });
+    currentNoteRef.current = { ...note, pinned: newPinned };
   };
 
   const handleSetLink = () => {
@@ -317,6 +346,39 @@ export default function NoteEditor({ note, onSave, onCreateNote, layoutMode, onT
               <ToolbarBtn onClick={onToggleLayout} title={`Cambiar vista (Actual: ${layoutMode} columnas)`}>
                 <PanelLeft size={15} />
               </ToolbarBtn>
+
+              {!autosaveEnabled && hasUnsavedChanges && (
+                <motion.button
+                  onClick={handleManualSave}
+                  title="Guardar cambios pendientes"
+                  initial={{ scale: 0, opacity: 0, x: 20 }}
+                  animate={{ scale: 1, opacity: 1, x: 0 }}
+                  exit={{ scale: 0, opacity: 0, x: 20 }}
+                  transition={{ type: 'spring', stiffness: 400, damping: 25 }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    marginLeft: 12,
+                    padding: '6px 16px',
+                    borderRadius: 8,
+                    border: '1px solid var(--accent)',
+                    background: 'var(--accent-dim)',
+                    color: 'var(--accent-light)',
+                    cursor: 'pointer',
+                    fontWeight: 600,
+                    fontSize: 13,
+                    boxShadow: '0 0 8px var(--accent-glow)',
+                    animation: 'cyber-border-pulse 3s ease-in-out infinite',
+                  }}
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  onMouseDown={(e) => e.preventDefault()}
+                >
+                  <Save size={16} />
+                  <span>Guardar</span>
+                </motion.button>
+              )}
             </>
           )}
         </div>
@@ -365,8 +427,16 @@ export default function NoteEditor({ note, onSave, onCreateNote, layoutMode, onT
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
         <div style={{ padding: '32px 48px 0', flexShrink: 0 }}>
           <input
-            value={note.title}
-            onChange={e => onSave({ ...note, title: e.target.value })}
+            value={localTitle}
+            onChange={e => {
+              setLocalTitle(e.target.value);
+              if (autosaveEnabled) {
+                onSave({ ...note, title: e.target.value });
+                currentNoteRef.current = { ...note, title: e.target.value };
+              } else {
+                setHasUnsavedChanges(true);
+              }
+            }}
             className="title-input"
             style={{
               width: '100%',
@@ -376,7 +446,7 @@ export default function NoteEditor({ note, onSave, onCreateNote, layoutMode, onT
               border: 'none', outline: 'none', color: 'var(--text-primary)', marginBottom: 8, letterSpacing: '-0.03em',
             }}
           />
-          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 16, opacity: 0.6, display: 'flex', gap: 12 }}>
+          <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 16, opacity: 0.85, display: 'flex', gap: 12 }}>
             <span>Creada: {new Date(note.created_at).toLocaleDateString()}</span>
             <span>•</span>
             <span>Editada: {new Date(note.updated_at).toLocaleTimeString()}</span>
@@ -749,6 +819,12 @@ export default function NoteEditor({ note, onSave, onCreateNote, layoutMode, onT
       <style>{`
         .ProseMirror {
           caret-color: var(--text-primary) !important;
+        }
+        @keyframes cyber-border-pulse {
+          0%, 100% { border-color: var(--accent); }
+          25%      { border-color: var(--pulse-1); }
+          50%      { border-color: var(--pulse-2); }
+          75%      { border-color: var(--pulse-3); }
         }
       `}</style>
     </div>

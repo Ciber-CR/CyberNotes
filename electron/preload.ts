@@ -29,6 +29,9 @@ contextBridge.exposeInMainWorld('cyberNotesAPI', {
   verifyPassword: (password: string) => ipcRenderer.invoke('auth:verifyPassword', password),
   removePassword: () => ipcRenderer.invoke('auth:removePassword'),
 
+  // -- Unsaved Changes --
+  setUnsavedChanges: (val: boolean) => ipcRenderer.invoke('window:unsavedChanges:set', val),
+
   // -- Settings --
   getSetting: (key: string) => ipcRenderer.invoke('settings:get', key),
   setSetting: (key: string, value: string) => ipcRenderer.invoke('settings:set', key, value),

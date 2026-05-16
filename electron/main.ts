@@ -129,12 +129,21 @@ function runQuery(sql: string, params: any[] = []) {
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let isQuitting = false;
+let hasUnsavedChanges = false;
+
+function restoreWindow() {
+  if (!mainWindow) return;
+  const maxVal = queryGet('SELECT value FROM settings WHERE key = ?', ['is_maximized']);
+  if (maxVal?.value === 'true') mainWindow.maximize();
+  mainWindow.show();
+  mainWindow.focus();
+}
 
 function createTray() {
   try {
     tray = new Tray(iconPath);
     const contextMenu = Menu.buildFromTemplate([
-      { label: 'Abrir CyberNotes', click: () => mainWindow?.show() },
+      { label: 'Abrir CyberNotes', click: restoreWindow },
       { type: 'separator' },
       { label: 'Salir', click: () => {
           isQuitting = true;
@@ -145,9 +154,13 @@ function createTray() {
     
     tray.setToolTip('CyberNotes');
     tray.setContextMenu(contextMenu);
-    
-    tray.on('double-click', () => {
-      mainWindow?.show();
+
+    tray.on('click', () => {
+      if (mainWindow?.isVisible()) {
+        mainWindow.hide();
+      } else {
+        restoreWindow();
+      }
     });
   } catch (err) {
     console.error('Failed to create tray:', err);
@@ -158,18 +171,13 @@ function createWindow() {
   // Recuperar estado de ventana guardado
   const boundsJson = queryGet('SELECT value FROM settings WHERE key = ?', ['window_bounds']);
   const isMaximizedVal = queryGet('SELECT value FROM settings WHERE key = ?', ['is_maximized']);
-  
-  const primaryDisplay = screen.getPrimaryDisplay();
-  const { width: scrW, height: scrH } = primaryDisplay.workAreaSize;
 
-  let bounds = { width: 1100, height: 700, x: undefined, y: undefined };
-  
+  let bounds = { width: 1100, height: 700, x: undefined as number | undefined, y: undefined as number | undefined };
+
   if (boundsJson) {
     try {
       const savedBounds = JSON.parse(boundsJson.value);
-      // Validar que no sean valores absurdos o que excedan demasiado la pantalla
-      if (savedBounds.width > 400 && savedBounds.width <= scrW + 100 && 
-          savedBounds.height > 400 && savedBounds.height <= scrH + 100) {
+      if (savedBounds.width > 400 && savedBounds.height > 400) {
         bounds = savedBounds;
       }
     } catch (e) {}
@@ -199,16 +207,13 @@ function createWindow() {
   // Guardar estado al cambiar
   const saveWindowState = () => {
     if (!mainWindow || mainWindow.isDestroyed()) return;
-    
+
     const isMax = mainWindow.isMaximized();
     runQuery('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', ['is_maximized', isMax ? 'true' : 'false']);
-    
-    if (!isMax) {
-      const b = mainWindow.getBounds();
-      // Solo guardar si los valores son razonables
-      if (b.width > 100 && b.height > 100) {
-        runQuery('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', ['window_bounds', JSON.stringify(b)]);
-      }
+
+    const b = mainWindow.getBounds();
+    if (b.width > 100 && b.height > 100) {
+      runQuery('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', ['window_bounds', JSON.stringify(b)]);
     }
   };
 
@@ -217,6 +222,7 @@ function createWindow() {
   mainWindow.on('close', saveWindowState);
   mainWindow.on('maximize', saveWindowState);
   mainWindow.on('unmaximize', saveWindowState);
+  mainWindow.on('hide', saveWindowState);
 
   // Manejar cierre (Bandeja de sistema)
   mainWindow.on('close', (event) => {
@@ -224,6 +230,24 @@ function createWindow() {
     if (closeToTray?.value === 'true' && !isQuitting) {
       event.preventDefault();
       mainWindow?.hide();
+      return false;
+    }
+    
+    if (hasUnsavedChanges) {
+      event.preventDefault();
+      dialog.showMessageBox(mainWindow!, {
+        type: 'question',
+        buttons: ['Salir sin guardar', 'Cancelar'],
+        defaultId: 1,
+        title: 'Cambios sin guardar',
+        message: 'Tienes cambios sin guardar en la nota actual. ¿Salir sin guardar?',
+      }).then(result => {
+        if (result.response === 0) {
+          hasUnsavedChanges = false;
+          isQuitting = true;
+          mainWindow?.close();
+        }
+      });
       return false;
     }
     
@@ -261,15 +285,14 @@ function createWindow() {
   }
 
   mainWindow.once('ready-to-show', () => {
+    // Si se inicia con auto-start, no mostrar la ventana
+    if (process.argv.includes('--hidden')) return;
+
     if (isMaximizedVal?.value === 'true') {
       mainWindow?.maximize();
     }
-    
-    // Si se inicia automáticamente al arrancar el PC, se pasa --hidden para iniciar en bandeja
-    if (!process.argv.includes('--hidden')) {
-      mainWindow!.show();
-      mainWindow!.focus();
-    }
+    mainWindow!.show();
+    mainWindow!.focus();
   });
 }
 
@@ -282,6 +305,9 @@ ipcMain.handle('window-maximize-toggle', () => {
   else mainWindow?.maximize();
 });
 ipcMain.handle('window-close', () => mainWindow?.close());
+ipcMain.handle('window:unsavedChanges:set', (_e: any, val: boolean) => {
+  hasUnsavedChanges = val;
+});
 ipcMain.handle('open-dev-tools', () => mainWindow?.webContents.openDevTools({ mode: 'detach' }));
 ipcMain.handle('open-data-folder', () => shell.openPath(userDataPath));
 ipcMain.handle('replace-misspelling', (_e: any, word: string) => mainWindow?.webContents.replaceMisspelling(word));
@@ -479,12 +505,7 @@ if (!gotTheLock) {
   app.quit();
 } else {
   app.on('second-instance', (event, commandLine, workingDirectory) => {
-    // Someone tried to run a second instance, we should focus our window.
-    if (mainWindow) {
-      if (mainWindow.isMinimized()) mainWindow.restore();
-      mainWindow.show();
-      mainWindow.focus();
-    }
+    restoreWindow();
   });
 
   app.whenReady().then(async () => {
@@ -497,7 +518,7 @@ if (!gotTheLock) {
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();
-      else mainWindow?.show();
+      else restoreWindow();
     });
   });
 
