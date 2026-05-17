@@ -22,6 +22,8 @@ interface Props {
   onShowLineCounterChange: (v: boolean) => void;
   autosaveEnabled: boolean;
   onAutosaveEnabledChange: (v: boolean) => void;
+  autoUnlockCapsLock: boolean;
+  onAutoUnlockCapsLockChange: (v: boolean) => void;
   onClose: () => void;
   onLock: () => void;
 }
@@ -35,6 +37,7 @@ export default function SettingsModal({
   rememberLastNote, onRememberLastNoteChange,
   showLineCounter, onShowLineCounterChange,
   autosaveEnabled, onAutosaveEnabledChange,
+  autoUnlockCapsLock, onAutoUnlockCapsLockChange,
   onClose, onLock 
 }: Props) {
   const [tab, setTab] = useState<Tab>('general');
@@ -510,6 +513,37 @@ export default function SettingsModal({
                         height: 20,
                         appearance: 'none',
                         background: autosaveEnabled ? 'var(--accent)' : 'var(--border)',
+                        borderRadius: 10,
+                        position: 'relative',
+                        cursor: 'pointer',
+                        transition: 'background 0.2s'
+                      }}
+                    />
+                  </label>
+
+                  <label style={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    justifyContent: 'space-between',
+                    padding: '12px 16px',
+                    background: 'var(--bg-surface)',
+                    borderRadius: 'var(--radius-md)',
+                    border: '1px solid var(--border)',
+                    cursor: 'pointer'
+                  }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                      <span style={{ fontSize: 13, color: 'var(--text-primary)', fontWeight: 500 }}>Desactivar Bloq Mayús por inactividad</span>
+                      <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Desactiva físicamente el Bloq Mayús tras 8 segundos de inactividad de teclado en el editor</span>
+                    </div>
+                    <input 
+                      type="checkbox" 
+                      checked={autoUnlockCapsLock}
+                      onChange={(e) => onAutoUnlockCapsLockChange(e.target.checked)}
+                      style={{
+                        width: 40,
+                        height: 20,
+                        appearance: 'none',
+                        background: autoUnlockCapsLock ? 'var(--accent)' : 'var(--border)',
                         borderRadius: 10,
                         position: 'relative',
                         cursor: 'pointer',

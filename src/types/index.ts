@@ -75,6 +75,8 @@ declare global {
       // Spellcheck
       replaceMisspelling: (word: string) => Promise<void>;
       addToDictionary: (word: string) => Promise<void>;
+      // Keyboard
+      unlockCapsLock: () => Promise<boolean>;
     };
   }
 }

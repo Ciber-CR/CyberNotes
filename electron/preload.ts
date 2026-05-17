@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld('cyberNotesAPI', {
   openDataFolder: () => ipcRenderer.invoke('open-data-folder'),
   replaceMisspelling: (word: string) => ipcRenderer.invoke('replace-misspelling', word),
   addToDictionary: (word: string) => ipcRenderer.invoke('add-to-dictionary', word),
+  unlockCapsLock: () => ipcRenderer.invoke('unlock-caps-lock'),
   onContextMenuData: (callback: (data: any) => void) => {
     const listener = (_e: any, data: any) => callback(data);
     ipcRenderer.on('context-menu-data', listener);

@@ -25,6 +25,7 @@ interface Props {
   onToggleLayout: () => void;
   showLineCounter?: boolean;
   autosaveEnabled?: boolean;
+  autoUnlockCapsLock?: boolean;
   uiScale?: number;
   onScaleChange?: (scale: number) => void;
 }
@@ -95,6 +96,7 @@ export default function NoteEditor({
   onToggleLayout, 
   showLineCounter, 
   autosaveEnabled = true,
+  autoUnlockCapsLock = false,
   uiScale = 1.0,
   onScaleChange
 }: Props) {
@@ -113,6 +115,41 @@ export default function NoteEditor({
   const [localTitle, setLocalTitle] = useState(note?.title || '');
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [showExportMenu, setShowExportMenu] = useState(false);
+  const [isCapsLockActive, setIsCapsLockActive] = useState(false);
+  const capsLockTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    const handleKeyboardActivity = (e: KeyboardEvent) => {
+      // Detect active modifier CapsLock state
+      const capActive = e.getModifierState && e.getModifierState("CapsLock");
+      setIsCapsLockActive(!!capActive);
+
+      // Manage inactivity timer if automated feature is enabled
+      if (autoUnlockCapsLock) {
+        if (capsLockTimerRef.current) clearTimeout(capsLockTimerRef.current);
+
+        if (capActive) {
+          capsLockTimerRef.current = setTimeout(async () => {
+            if (window.cyberNotesAPI && window.cyberNotesAPI.unlockCapsLock) {
+              const success = await window.cyberNotesAPI.unlockCapsLock();
+              if (success) {
+                setIsCapsLockActive(false);
+              }
+            }
+          }, 8000); // 8 seconds of absolute keyboard inactivity
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyboardActivity, true);
+    window.addEventListener('keyup', handleKeyboardActivity, true);
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyboardActivity, true);
+      window.removeEventListener('keyup', handleKeyboardActivity, true);
+      if (capsLockTimerRef.current) clearTimeout(capsLockTimerRef.current);
+    };
+  }, [autoUnlockCapsLock]);
 
   useEffect(() => {
     const closeMenu = () => {
@@ -981,6 +1018,34 @@ export default function NoteEditor({
 
         {/* Editor Line/Col stats & Text Metrics */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 14, opacity: 0.85 }}>
+          <AnimatePresence>
+            {isCapsLockActive && (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.8 }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 4,
+                  background: 'rgba(239, 68, 68, 0.15)',
+                  border: '1px solid rgba(239, 68, 68, 0.4)',
+                  color: '#ef4444',
+                  padding: '2px 8px',
+                  borderRadius: 'var(--radius-sm)',
+                  fontSize: 9,
+                  fontWeight: 'bold',
+                  letterSpacing: '0.05em',
+                  fontFamily: 'var(--font-mono)',
+                  marginRight: 6,
+                  boxShadow: '0 0 8px rgba(239, 68, 68, 0.25)',
+                }}
+              >
+                <span>⚠️ BLOQ MAYÚS</span>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
           {showLineCounter && (
             <>
               <div style={{ display: 'flex', gap: 10 }}>

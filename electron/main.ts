@@ -3,6 +3,7 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
+import { exec } from 'child_process';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
@@ -313,6 +314,31 @@ ipcMain.handle('open-data-folder', () => shell.openPath(userDataPath));
 ipcMain.handle('replace-misspelling', (_e: any, word: string) => mainWindow?.webContents.replaceMisspelling(word));
 ipcMain.handle('add-to-dictionary', (_e: any, word: string) => {
   session.defaultSession.addWordToSpellCheckerDictionary(word);
+});
+ipcMain.handle('unlock-caps-lock', async () => {
+  if (process.platform !== 'win32') return false;
+  return new Promise((resolve) => {
+    const psScript = `
+      Add-Type -AssemblyName System.Windows.Forms
+      if ([System.Windows.Forms.Control]::IsKeyLocked('CapsLock')) {
+        $wsh = New-Object -ComObject WScript.Shell
+        $wsh.SendKeys('{CAPSLOCK}')
+        echo "unlocked"
+      } else {
+        echo "already-off"
+      }
+    `.trim().replace(/\\s+/g, ' ');
+
+    exec(`powershell -Command "${psScript}"`, (err, stdout) => {
+      if (err) {
+        console.error('Failed to unlock caps lock:', err);
+        resolve(false);
+      } else {
+        const out = stdout.trim();
+        resolve(out === 'unlocked');
+      }
+    });
+  });
 });
 
 // -- Auth --

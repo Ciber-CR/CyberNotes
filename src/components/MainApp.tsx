@@ -42,6 +42,7 @@ export default function MainApp({ currentTheme, onThemeChange, colorIntensity, o
   const [rememberLastNote, setRememberLastNote] = useState(false);
   const [showLineCounter, setShowLineCounter] = useState(false);
   const [autosaveEnabled, setAutosaveEnabled] = useState(true);
+  const [autoUnlockCapsLock, setAutoUnlockCapsLock] = useState(false);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
@@ -161,6 +162,9 @@ export default function MainApp({ currentTheme, onThemeChange, colorIntensity, o
 
     const autosave = await window.cyberNotesAPI.getSetting('autosave_enabled');
     if (autosave !== null) setAutosaveEnabled(autosave === 'true');
+
+    const capsLock = await window.cyberNotesAPI.getSetting('auto_unlock_caps_lock');
+    setAutoUnlockCapsLock(capsLock === 'true');
 
     if (isRemember) {
       const lastId = await window.cyberNotesAPI.getSetting('last_note_id');
@@ -340,9 +344,14 @@ export default function MainApp({ currentTheme, onThemeChange, colorIntensity, o
     await window.cyberNotesAPI.setSetting('show_line_counter', v.toString());
   };
 
-  const handleAutosaveEnabledChange = async (v: boolean) => {
-    setAutosaveEnabled(v);
-    await window.cyberNotesAPI.setSetting('autosave_enabled', v.toString());
+  const handleAutosaveEnabledChange = async (val: boolean) => {
+    setAutosaveEnabled(val);
+    await window.cyberNotesAPI.setSetting('autosave_enabled', val.toString());
+  };
+
+  const handleAutoUnlockCapsLockChange = async (val: boolean) => {
+    setAutoUnlockCapsLock(val);
+    await window.cyberNotesAPI.setSetting('auto_unlock_caps_lock', val.toString());
   };
 
   const selectedNote = notes.find(n => n.id === selectedNoteId) ?? null;
@@ -476,6 +485,7 @@ export default function MainApp({ currentTheme, onThemeChange, colorIntensity, o
           onToggleLayout={() => setLayoutMode(prev => prev === 1 ? 3 : prev - 1 as any)}
           showLineCounter={showLineCounter}
           autosaveEnabled={autosaveEnabled}
+          autoUnlockCapsLock={autoUnlockCapsLock}
           uiScale={uiScale}
           onScaleChange={handleScaleChange}
         />
@@ -501,6 +511,8 @@ export default function MainApp({ currentTheme, onThemeChange, colorIntensity, o
           onShowLineCounterChange={handleShowLineCounterChange}
           autosaveEnabled={autosaveEnabled}
           onAutosaveEnabledChange={handleAutosaveEnabledChange}
+          autoUnlockCapsLock={autoUnlockCapsLock}
+          onAutoUnlockCapsLockChange={handleAutoUnlockCapsLockChange}
           onClose={() => setShowSettings(false)}
           onLock={onLock}
         />
