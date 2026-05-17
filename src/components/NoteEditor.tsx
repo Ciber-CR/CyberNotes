@@ -14,7 +14,7 @@ import {
   Heading1, Heading2, List, ListOrdered, Link as LinkIcon,
   Image as ImageIcon, Highlighter, Quote, Minus, Code,
   Plus, Pin, AlignLeft, AlignCenter, AlignRight, Braces, PanelLeft,
-  Undo, Redo, Save
+  Undo, Redo, Save, Download
 } from 'lucide-react';
 
 interface Props {
@@ -25,6 +25,8 @@ interface Props {
   onToggleLayout: () => void;
   showLineCounter?: boolean;
   autosaveEnabled?: boolean;
+  uiScale?: number;
+  onScaleChange?: (scale: number) => void;
 }
 
 // Extensión personalizada para imagen con soporte de tamaño y alineación
@@ -85,9 +87,20 @@ const ToolbarBtn = ({
   </motion.button>
 );
 
-export default function NoteEditor({ note, onSave, onCreateNote, layoutMode, onToggleLayout, showLineCounter, autosaveEnabled = true }: Props) {
+export default function NoteEditor({ 
+  note, 
+  onSave, 
+  onCreateNote, 
+  layoutMode, 
+  onToggleLayout, 
+  showLineCounter, 
+  autosaveEnabled = true,
+  uiScale = 1.0,
+  onScaleChange
+}: Props) {
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const currentNoteRef = useRef<Note | null>(note);
+  const titleInputRef = useRef<HTMLInputElement | null>(null);
   // Sincronizar ref con cada render para que scheduleAutoSave siempre tenga la note actual
   const [pinned, setPinned] = useState(note?.pinned === 1);
   const [isRaw, setIsRaw] = useState(false);
@@ -96,13 +109,16 @@ export default function NoteEditor({ note, onSave, onCreateNote, layoutMode, onT
   const [hoveredLink, setHoveredLink] = useState<string | null>(null);
   const [inputContextMenu, setInputContextMenu] = useState<{ x: number, y: number } | null>(null);
   const [lineInfo, setLineInfo] = useState({ line: 1, col: 1, total: 1 });
+  const [textMetrics, setTextMetrics] = useState({ words: 0, chars: 0, readingTime: 0 });
   const [localTitle, setLocalTitle] = useState(note?.title || '');
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [showExportMenu, setShowExportMenu] = useState(false);
 
   useEffect(() => {
     const closeMenu = () => {
       setContextMenu(null);
       setInputContextMenu(null);
+      setShowExportMenu(false);
     };
     document.addEventListener('click', closeMenu);
     
@@ -175,9 +191,21 @@ export default function NoteEditor({ note, onSave, onCreateNote, layoutMode, onT
       const html = editor.getHTML();
       scheduleAutoSave(html);
       updateLineInfo(editor);
+      updateTextMetrics(editor);
     },
     onSelectionUpdate: ({ editor }) => {
       updateLineInfo(editor);
+    },
+    onBlur: ({ editor }) => {
+      const html = editor.getHTML();
+      const current = currentNoteRef.current;
+      if (!current) return;
+      const preview = extractPreview(html);
+      onSave({ ...current, content: html, preview });
+      if (saveTimer.current) {
+        clearTimeout(saveTimer.current);
+        saveTimer.current = null;
+      }
     },
   });
 
@@ -193,6 +221,14 @@ export default function NoteEditor({ note, onSave, onCreateNote, layoutMode, onT
     const totalLines = totalText.split('\n').length;
     
     setLineInfo({ line: currentLine, col: currentCol, total: totalLines });
+  };
+
+  const updateTextMetrics = (editor: any) => {
+    const text = editor.getText();
+    const chars = text.length;
+    const words = text.trim() === '' ? 0 : text.trim().split(/\s+/).length;
+    const readingTime = Math.ceil(words / 200);
+    setTextMetrics({ words, chars, readingTime });
   };
 
   const handleManualSave = useCallback(() => {
@@ -230,9 +266,36 @@ export default function NoteEditor({ note, onSave, onCreateNote, layoutMode, onT
     } else {
       editor.commands.setContent(content, false);
     }
+
+    updateTextMetrics(editor);
+    updateLineInfo(editor);
     
-    editor.commands.focus('start');
+    if (note.title === 'Nueva nota') {
+      setTimeout(() => {
+        if (titleInputRef.current) {
+          titleInputRef.current.focus();
+          const len = titleInputRef.current.value.length;
+          titleInputRef.current.setSelectionRange(len, len);
+        }
+      }, 50);
+    } else {
+      editor.commands.focus('start');
+    }
     setIsRaw(false);
+
+    return () => {
+      // Closure-based safeguard: flush save immediately when note changes or unmounts
+      if (saveTimer.current) {
+        clearTimeout(saveTimer.current);
+        saveTimer.current = null;
+        const current = currentNoteRef.current;
+        if (current && editor) {
+          const html = editor.getHTML();
+          const preview = extractPreview(html);
+          onSave({ ...current, content: html, preview });
+        }
+      }
+    };
   }, [note?.id, editor]);
 
   // Sincronizar ref con la note prop cuando cambia (mismo id, nuevo ref)
@@ -260,6 +323,135 @@ export default function NoteEditor({ note, onSave, onCreateNote, layoutMode, onT
     setPinned(!pinned);
     onSave({ ...note, pinned: newPinned });
     currentNoteRef.current = { ...note, pinned: newPinned };
+  };
+
+  const convertHtmlToMarkdown = (html: string): string => {
+    if (!html) return '';
+    const temp = document.createElement('div');
+    temp.innerHTML = html;
+
+    const traverse = (node: Node): string => {
+      if (node.nodeType === Node.TEXT_NODE) {
+        return node.textContent || '';
+      }
+      if (node.nodeType !== Node.ELEMENT_NODE) {
+        return '';
+      }
+      const el = node as HTMLElement;
+      const childrenStr = Array.from(el.childNodes).map(traverse).join('');
+
+      switch (el.tagName.toLowerCase()) {
+        case 'p': return `\n${childrenStr}\n`;
+        case 'h1': return `\n# ${childrenStr}\n`;
+        case 'h2': return `\n## ${childrenStr}\n`;
+        case 'h3': return `\n### ${childrenStr}\n`;
+        case 'strong':
+        case 'b': return `**${childrenStr}**`;
+        case 'em':
+        case 'i': return `*${childrenStr}*`;
+        case 'u': return `_${childrenStr}_`;
+        case 's':
+        case 'strike':
+        case 'del': return `~~${childrenStr}~~`;
+        case 'ul': return `\n${childrenStr}\n`;
+        case 'ol': return `\n${childrenStr}\n`;
+        case 'li': return `* ${childrenStr}\n`;
+        case 'blockquote': return `\n> ${childrenStr.trim().split('\n').join('\n> ')}\n`;
+        case 'code': return `\`${childrenStr}\``;
+        case 'pre': return `\n\`\`\`\n${childrenStr.trim()}\n\`\`\`\n`;
+        case 'br': return '\n';
+        case 'hr': return '\n---\n';
+        case 'a': return `[${childrenStr}](${el.getAttribute('href') || ''})`;
+        case 'img': return `![Imagen](${el.getAttribute('src') || ''})`;
+        default: return childrenStr;
+      }
+    };
+
+    return traverse(temp).trim().replace(/\n{3,}/g, '\n\n');
+  };
+
+  const handleExportMarkdown = () => {
+    if (!note) return;
+    const editorHtml = editor?.getHTML() || '';
+    const title = note.title || 'Nota';
+    const md = convertHtmlToMarkdown(editorHtml);
+    const mdContent = `# ${title}\n\n${md}`;
+
+    const blob = new Blob([mdContent], { type: 'text/markdown;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `${title.toLowerCase().replace(/\s+/g, '-')}.md`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    setShowExportMenu(false);
+  };
+
+  const handleExportHtml = () => {
+    if (!note) return;
+    const editorHtml = editor?.getHTML() || '';
+    const title = note.title || 'Nota';
+    const htmlContent = `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${title}</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #0f0f13;
+      color: #e2e8f0;
+      line-height: 1.6;
+      max-width: 700px;
+      margin: 40px auto;
+      padding: 0 20px;
+    }
+    h1 {
+      font-size: 2.2em;
+      border-bottom: 1px solid #2d3748;
+      padding-bottom: 10px;
+      color: #38bdf8;
+      letter-spacing: -0.02em;
+    }
+    h2 { color: #f472b6; }
+    h3 { color: #c084fc; }
+    a { color: #38bdf8; text-decoration: none; }
+    a:hover { text-underline-offset: 4px; text-decoration: underline; }
+    pre {
+      background: #1a1a24;
+      padding: 15px;
+      border-radius: 8px;
+      overflow-x: auto;
+      border: 1px solid #2d3748;
+    }
+    code { font-family: monospace; }
+    blockquote {
+      border-left: 4px solid #a855f7;
+      padding-left: 20px;
+      margin-left: 0;
+      color: #94a3b8;
+      font-style: italic;
+    }
+    img { max-width: 100%; border-radius: 8px; }
+  </style>
+</head>
+<body>
+  <h1>${title}</h1>
+  <div>${editorHtml}</div>
+</body>
+</html>`;
+
+    const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `${title.toLowerCase().replace(/\s+/g, '-')}.html`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    setShowExportMenu(false);
   };
 
   const handleSetLink = () => {
@@ -299,7 +491,6 @@ export default function NoteEditor({ note, onSave, onCreateNote, layoutMode, onT
 
   return (
     <div 
-      key={note.id}
       className="glass-effect editor-glass"
       style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'var(--bg-editor)', overflow: 'hidden' }}
     >
@@ -338,47 +529,6 @@ export default function NoteEditor({ note, onSave, onCreateNote, layoutMode, onT
               <ToolbarBtn onClick={handleInsertImage} title="Insertar imagen"><ImageIcon size={15} /></ToolbarBtn>
               
               <div style={{ flex: 1 }} />
-              
-              <ToolbarBtn onClick={handlePin} active={pinned} title="Fijar nota"><Pin size={15} /></ToolbarBtn>
-              <ToolbarBtn onClick={() => setIsRaw(!isRaw)} active={isRaw} title="Vista HTML"><Braces size={15} /></ToolbarBtn>
-              
-              <div style={{ width: 1, height: 18, background: 'var(--border)', margin: '0 4px' }} />
-              <ToolbarBtn onClick={onToggleLayout} title={`Cambiar vista (Actual: ${layoutMode} columnas)`}>
-                <PanelLeft size={15} />
-              </ToolbarBtn>
-
-              {!autosaveEnabled && hasUnsavedChanges && (
-                <motion.button
-                  onClick={handleManualSave}
-                  title="Guardar cambios pendientes"
-                  initial={{ scale: 0, opacity: 0, x: 20 }}
-                  animate={{ scale: 1, opacity: 1, x: 0 }}
-                  exit={{ scale: 0, opacity: 0, x: 20 }}
-                  transition={{ type: 'spring', stiffness: 400, damping: 25 }}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 6,
-                    marginLeft: 12,
-                    padding: '6px 16px',
-                    borderRadius: 8,
-                    border: '1px solid var(--accent)',
-                    background: 'var(--accent-dim)',
-                    color: 'var(--accent-light)',
-                    cursor: 'pointer',
-                    fontWeight: 600,
-                    fontSize: 13,
-                    boxShadow: '0 0 8px var(--accent-glow)',
-                    animation: 'cyber-border-pulse 3s ease-in-out infinite',
-                  }}
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                  onMouseDown={(e) => e.preventDefault()}
-                >
-                  <Save size={16} />
-                  <span>Guardar</span>
-                </motion.button>
-              )}
             </>
           )}
         </div>
@@ -426,30 +576,253 @@ export default function NoteEditor({ note, onSave, onCreateNote, layoutMode, onT
 
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
         <div style={{ padding: '32px 48px 0', flexShrink: 0 }}>
-          <input
-            value={localTitle}
-            onChange={e => {
-              setLocalTitle(e.target.value);
-              if (autosaveEnabled) {
-                onSave({ ...note, title: e.target.value });
-                currentNoteRef.current = { ...note, title: e.target.value };
-              } else {
-                setHasUnsavedChanges(true);
-              }
-            }}
-            className="title-input"
-            style={{
-              width: '100%',
-              fontSize: 'calc(32px * var(--ui-scale))',
-              fontWeight: 700,
-              background: 'transparent',
-              border: 'none', outline: 'none', color: 'var(--text-primary)', marginBottom: 8, letterSpacing: '-0.03em',
-            }}
-          />
-          <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 16, opacity: 0.85, display: 'flex', gap: 12 }}>
-            <span>Creada: {new Date(note.created_at).toLocaleDateString()}</span>
-            <span>•</span>
-            <span>Editada: {new Date(note.updated_at).toLocaleTimeString()}</span>
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 24 }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <input
+                ref={titleInputRef}
+                value={localTitle}
+                onChange={e => {
+                  setLocalTitle(e.target.value);
+                  const current = currentNoteRef.current;
+                  if (current) {
+                    const updated = { ...current, title: e.target.value };
+                    currentNoteRef.current = updated;
+                    if (autosaveEnabled) {
+                      onSave(updated);
+                    } else {
+                      setHasUnsavedChanges(true);
+                    }
+                  }
+                }}
+                className="title-input"
+                style={{
+                  width: '100%',
+                  fontSize: 'calc(32px * var(--ui-scale))',
+                  fontWeight: 700,
+                  background: 'transparent',
+                  border: 'none', outline: 'none', color: 'var(--text-primary)', marginBottom: 8, letterSpacing: '-0.03em',
+                }}
+              />
+            </div>
+            
+            {/* Note-Level Actions Toolbar Panel */}
+            <div style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: 6, 
+              flexShrink: 0,
+              background: 'var(--bg-surface)',
+              border: '1px solid var(--border)',
+              padding: '4px 6px',
+              borderRadius: 'var(--radius-md)',
+              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+              marginTop: 4,
+            }}>
+              {/* Pin */}
+              <button 
+                onClick={handlePin}
+                title={pinned ? "Desfijar nota" : "Fijar nota"}
+                style={{ 
+                  padding: 6,
+                  color: pinned ? 'var(--accent-light)' : 'var(--text-muted)',
+                  background: pinned ? 'var(--accent-dim)' : 'transparent',
+                  border: 'none',
+                  borderRadius: 'var(--radius-sm)',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  transition: 'all 0.2s',
+                }}
+                onMouseEnter={e => { if (!pinned) e.currentTarget.style.color = 'var(--text-primary)'; }}
+                onMouseLeave={e => { if (!pinned) e.currentTarget.style.color = 'var(--text-muted)'; }}
+              >
+                <Pin size={14} />
+              </button>
+
+              {/* Vista HTML */}
+              <button 
+                onClick={() => setIsRaw(!isRaw)}
+                title="Vista HTML (Ver código fuente)"
+                style={{ 
+                  padding: 6,
+                  color: isRaw ? 'var(--accent-light)' : 'var(--text-muted)',
+                  background: isRaw ? 'var(--accent-dim)' : 'transparent',
+                  border: 'none',
+                  borderRadius: 'var(--radius-sm)',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  transition: 'all 0.2s',
+                }}
+                onMouseEnter={e => { if (!isRaw) e.currentTarget.style.color = 'var(--text-primary)'; }}
+                onMouseLeave={e => { if (!isRaw) e.currentTarget.style.color = 'var(--text-muted)'; }}
+              >
+                <Braces size={14} />
+              </button>
+
+              <div style={{ width: 1, height: 14, background: 'var(--border)', margin: '0 2px' }} />
+
+              {/* Cambiar vista */}
+              <button 
+                onClick={onToggleLayout}
+                title={`Cambiar vista (Actual: ${layoutMode} columnas)`}
+                style={{ 
+                  padding: 6,
+                  color: 'var(--text-muted)',
+                  background: 'transparent',
+                  border: 'none',
+                  borderRadius: 'var(--radius-sm)',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  transition: 'all 0.2s',
+                }}
+                onMouseEnter={e => e.currentTarget.style.color = 'var(--text-primary)'}
+                onMouseLeave={e => e.currentTarget.style.color = 'var(--text-muted)'}
+              >
+                <PanelLeft size={14} />
+              </button>
+
+              <div style={{ width: 1, height: 14, background: 'var(--border)', margin: '0 2px' }} />
+
+              {/* Exportar nota dropdown trigger */}
+              <div style={{ position: 'relative', display: 'flex' }}>
+                <button 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowExportMenu(!showExportMenu);
+                  }}
+                  title="Exportar nota (.md / .html)"
+                  style={{ 
+                    padding: 6,
+                    color: showExportMenu ? 'var(--accent-light)' : 'var(--text-muted)',
+                    background: showExportMenu ? 'var(--accent-dim)' : 'transparent',
+                    border: 'none',
+                    borderRadius: 'var(--radius-sm)',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    transition: 'all 0.2s',
+                  }}
+                  onMouseEnter={e => { if (!showExportMenu) e.currentTarget.style.color = 'var(--text-primary)'; }}
+                  onMouseLeave={e => { if (!showExportMenu) e.currentTarget.style.color = 'var(--text-muted)'; }}
+                >
+                  <Download size={14} />
+                </button>
+
+                <AnimatePresence>
+                  {showExportMenu && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 8, scale: 0.95 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 8, scale: 0.95 }}
+                      transition={{ duration: 0.15 }}
+                      style={{
+                        position: 'absolute',
+                        top: '100%',
+                        right: 0,
+                        marginTop: 6,
+                        background: 'var(--bg-modal)',
+                        border: '1px solid var(--border)',
+                        borderRadius: 'var(--radius-md)',
+                        boxShadow: '0 10px 25px rgba(0,0,0,0.3)',
+                        zIndex: 100,
+                        minWidth: 180,
+                        overflow: 'hidden',
+                        padding: 4,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 2,
+                      }}
+                      className="glass-effect"
+                    >
+                      <button
+                        onClick={handleExportMarkdown}
+                        style={{
+                          padding: '8px 12px',
+                          fontSize: 12,
+                          textAlign: 'left',
+                          background: 'transparent',
+                          color: 'var(--text-primary)',
+                          border: 'none',
+                          borderRadius: 4,
+                          cursor: 'pointer',
+                          fontFamily: 'inherit',
+                          transition: 'background 0.2s',
+                        }}
+                        onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
+                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                      >
+                        📝 Exportar como Markdown (.md)
+                      </button>
+                      <button
+                        onClick={handleExportHtml}
+                        style={{
+                          padding: '8px 12px',
+                          fontSize: 12,
+                          textAlign: 'left',
+                          background: 'transparent',
+                          color: 'var(--text-primary)',
+                          border: 'none',
+                          borderRadius: 4,
+                          cursor: 'pointer',
+                          fontFamily: 'inherit',
+                          transition: 'background 0.2s',
+                        }}
+                        onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
+                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                      >
+                        🌐 Exportar como HTML (.html)
+                      </button>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            </div>
+          </div>
+
+          <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 16, opacity: 0.85, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', gap: 12 }}>
+              <span>Creada: {new Date(note.created_at).toLocaleDateString()}</span>
+              <span>•</span>
+              <span>Editada: {new Date(note.updated_at).toLocaleTimeString()}</span>
+            </div>
+
+            {/* Manual Save status block inside the metadata row on the right */}
+            {!autosaveEnabled && hasUnsavedChanges && (
+              <motion.button
+                onClick={handleManualSave}
+                title="Guardar cambios pendientes"
+                initial={{ scale: 0, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0, opacity: 0 }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  padding: '4px 12px',
+                  borderRadius: 6,
+                  border: '1px solid var(--accent)',
+                  background: 'var(--accent-dim)',
+                  color: 'var(--accent-light)',
+                  cursor: 'pointer',
+                  fontWeight: 600,
+                  fontSize: 11,
+                  boxShadow: '0 0 8px var(--accent-glow)',
+                  animation: 'cyber-border-pulse 3s ease-in-out infinite',
+                }}
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onMouseDown={(e) => e.preventDefault()}
+              >
+                <Save size={12} />
+                <span>Guardar</span>
+              </motion.button>
+            )}
           </div>
         </div>
 
@@ -519,26 +892,112 @@ export default function NoteEditor({ note, onSave, onCreateNote, layoutMode, onT
 
       </div>
 
-      {showLineCounter && (
-        <div style={{
-          padding: '4px 16px',
-          background: 'var(--bg-notelist)',
-          borderTop: '1px solid var(--border)',
-          display: 'flex',
-          justifyContent: 'flex-end',
-          gap: 16,
-          fontSize: 10,
-          color: 'var(--text-muted)',
-          fontFamily: 'var(--font-mono)',
-          letterSpacing: 0.5,
-          opacity: 0.8,
-          flexShrink: 0
-        }}>
-          <span>LÍNEA: {lineInfo.line}</span>
-          <span>COL: {lineInfo.col}</span>
-          <span>TOTAL: {lineInfo.total} LÍNEAS</span>
+      <div style={{
+        padding: '6px 16px',
+        background: 'var(--bg-notelist)',
+        borderTop: '1px solid var(--border)',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        fontSize: 10,
+        color: 'var(--text-muted)',
+        fontFamily: 'var(--font-mono)',
+        letterSpacing: 0.5,
+        opacity: 0.95,
+        flexShrink: 0
+      }}>
+        {/* Global UI Scale Text Size Controller */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--text-muted)' }}>
+          <span style={{ fontSize: 9, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.8, opacity: 0.85, marginRight: 2 }}>Escala:</span>
+          
+          <button 
+            onClick={() => onScaleChange?.(Math.max(0.8, parseFloat((uiScale - 0.05).toFixed(2))))}
+            title="Reducir tamaño de interfaz (5%)"
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: 'var(--text-muted)',
+              cursor: 'pointer',
+              padding: '2px 4px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              outline: 'none',
+              transition: 'color 0.2s',
+            }}
+            onMouseEnter={e => e.currentTarget.style.color = 'var(--accent-light)'}
+            onMouseLeave={e => e.currentTarget.style.color = 'var(--text-muted)'}
+            onMouseDown={e => e.preventDefault()}
+          >
+            <Minus size={11} />
+          </button>
+
+          <input 
+            type="range"
+            min="0.8"
+            max="1.5"
+            step="0.05"
+            value={uiScale}
+            onChange={(e) => onScaleChange?.(parseFloat(e.target.value))}
+            style={{
+              width: 80,
+              height: 4,
+              background: 'var(--border)',
+              borderRadius: 2,
+              appearance: 'none',
+              outline: 'none',
+              cursor: 'pointer',
+              accentColor: 'var(--accent)',
+              transition: 'background 0.2s',
+            }}
+          />
+
+          <button 
+            onClick={() => onScaleChange?.(Math.min(1.5, parseFloat((uiScale + 0.05).toFixed(2))))}
+            title="Aumentar tamaño de interfaz (5%)"
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: 'var(--text-muted)',
+              cursor: 'pointer',
+              padding: '2px 4px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              outline: 'none',
+              transition: 'color 0.2s',
+            }}
+            onMouseEnter={e => e.currentTarget.style.color = 'var(--accent-light)'}
+            onMouseLeave={e => e.currentTarget.style.color = 'var(--text-muted)'}
+            onMouseDown={e => e.preventDefault()}
+          >
+            <Plus size={11} />
+          </button>
+
+          <span style={{ fontSize: 9.5, fontWeight: 700, minWidth: 32, color: 'var(--accent-light)', textAlign: 'right', marginLeft: 4 }}>
+            {Math.round(uiScale * 100)}%
+          </span>
         </div>
-      )}
+
+        {/* Editor Line/Col stats & Text Metrics */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14, opacity: 0.85 }}>
+          {showLineCounter && (
+            <>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <span>LN {lineInfo.line}</span>
+                <span>COL {lineInfo.col}</span>
+                <span>TOTAL {lineInfo.total} LN</span>
+              </div>
+              <span style={{ opacity: 0.3, fontWeight: 300 }}>|</span>
+            </>
+          )}
+          <div style={{ display: 'flex', gap: 10 }}>
+            <span>{textMetrics.words} PALABRAS</span>
+            <span>{textMetrics.chars} CARS</span>
+            <span style={{ color: 'var(--accent-light)', fontWeight: 600 }}>{textMetrics.readingTime} {textMetrics.readingTime === 1 ? 'MIN' : 'MINS'} LEER</span>
+          </div>
+        </div>
+      </div>
 
       {contextMenu && editor && createPortal(
         <div 

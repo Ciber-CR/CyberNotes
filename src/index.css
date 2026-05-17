@@ -417,12 +417,18 @@ body:has(.has-bg),
   opacity: 0.3;
 }
 
+.ProseMirror p.is-editor-empty:first-child {
+  position: relative;
+}
+
 .ProseMirror p.is-editor-empty:first-child::before {
   content: attr(data-placeholder);
   color: var(--text-muted);
   pointer-events: none;
-  float: left;
-  height: 0;
+  position: absolute;
+  left: 0;
+  top: 0;
+  white-space: nowrap;
 }
 
 /* ─── Animations ──────────────────────────────────────────── */
@@ -443,6 +449,11 @@ body:has(.has-bg),
 @keyframes pulse-glow {
   0%, 100% { box-shadow: 0 0 10px var(--accent-glow); }
   50%       { box-shadow: 0 0 24px var(--accent-glow), 0 0 40px var(--accent-glow); }
+}
+
+@keyframes modalScaleIn {
+  from { opacity: 0; transform: scale(0.95) translateY(10px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
 }
 
 .animate-fade-in {

@@ -88,6 +88,7 @@ export default function NoteList({
   const [hiddenCount, setHiddenCount] = useState(0);
   const [renameTarget, setRenameTarget] = useState<Note | null>(null);
   const [renameInput, setRenameInput] = useState('');
+  const [noteToDelete, setNoteToDelete] = useState<Note | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -150,10 +151,10 @@ export default function NoteList({
     >
       {/* Header */}
       <div style={{
-        padding: '14px 14px 8px',
+        padding: '20px 18px 12px',
         display: 'flex',
         flexDirection: 'column',
-        gap: 12,
+        gap: 16,
         flexShrink: 0,
       }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -274,7 +275,7 @@ export default function NoteList({
                     viewMode={viewMode}
                     isSelected={note.id === selectedNoteId}
                     onClick={() => onSelectNote(note.id)}
-                    onDelete={() => onDeleteNote(note.id)}
+                    onDelete={() => setNoteToDelete(note)}
                     onContextMenu={(e) => {
                     e.preventDefault();
                     let safeX = e.clientX;
@@ -418,10 +419,10 @@ export default function NoteList({
           <div style={{ height: 1, background: 'var(--border)', margin: '2px 0' }} />
           <button
             onClick={() => {
-              if (confirm('¿Eliminar esta nota?')) onDeleteNote(contextMenu.note.id);
+              setNoteToDelete(contextMenu.note);
             }}
             style={{ textAlign: 'left', padding: '6px 10px', fontSize: 12, color: 'var(--danger)', background: 'transparent', border: 'none', borderRadius: 4, cursor: 'pointer' }}
-            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'var(--danger-dim)'; }}
+            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'; }}
             onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
           >
             Eliminar
@@ -463,6 +464,87 @@ export default function NoteList({
                 onRenameNote(renameTarget.id, renameInput);
                 setRenameTarget(null);
               }}>Guardar</button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Modal Confirmar Eliminar Nota */}
+      {noteToDelete && createPortal(
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(0, 0, 0, 0.4)',
+          backdropFilter: 'blur(8px)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000000,
+          animation: 'fadeIn 0.2s ease-out'
+        }} onClick={() => setNoteToDelete(null)}>
+          <div style={{
+            background: 'var(--bg-modal)', padding: '24px 32px', borderRadius: 'var(--radius-lg)',
+            width: 380, display: 'flex', flexDirection: 'column', gap: 20, border: '1px solid var(--border)',
+            boxShadow: '0 24px 48px rgba(0,0,0,0.6), 0 0 24px var(--accent-glow)',
+            animation: 'modalScaleIn 0.25s cubic-bezier(0.34, 1.56, 0.64, 1)',
+          }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={{
+                background: 'rgba(239, 68, 68, 0.15)',
+                color: 'var(--danger)',
+                width: 42,
+                height: 42,
+                borderRadius: '50%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+                border: '1px solid rgba(239, 68, 68, 0.3)',
+                boxShadow: '0 0 12px rgba(239, 68, 68, 0.2)',
+              }}>
+                <Trash2 size={20} />
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <h3 style={{ margin: 0, fontSize: 16, color: 'var(--text-primary)', fontWeight: 700 }}>¿Eliminar esta nota?</h3>
+                <span style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>Esta acción no se puede deshacer.</span>
+              </div>
+            </div>
+
+            <div style={{
+              fontSize: 'calc(13px * var(--ui-scale))',
+              color: 'var(--text-muted)',
+              background: 'var(--bg-surface)',
+              padding: '12px 16px',
+              borderRadius: 'var(--radius-sm)',
+              borderLeft: '3px solid var(--danger)',
+              fontWeight: 500,
+              fontStyle: 'italic',
+            }} className="truncate">
+              "{noteToDelete.title || 'Sin título'}"
+            </div>
+
+            <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end', marginTop: 8 }}>
+              <button 
+                className="btn btn-ghost" 
+                onClick={() => setNoteToDelete(null)}
+                style={{ padding: '8px 16px', fontWeight: 600 }}
+              >
+                Cancelar
+              </button>
+              <button 
+                className="btn btn-danger" 
+                onClick={() => {
+                  onDeleteNote(noteToDelete.id);
+                  setNoteToDelete(null);
+                  setContextMenu(null);
+                }}
+                style={{ 
+                  padding: '8px 16px', 
+                  fontWeight: 600,
+                  boxShadow: '0 0 16px var(--danger-dim)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6
+                }}
+              >
+                <Trash2 size={14} /> Eliminar
+              </button>
             </div>
           </div>
         </div>,
@@ -546,25 +628,6 @@ function NoteItem({ note, viewMode, isSelected, onClick, onDelete, onContextMenu
             justifyContent: 'space-between'
           }}>
             <span>{formatDate(note.updated_at)}</span>
-            
-            <button
-              className="delete-note-btn"
-              onClick={e => {
-                e.stopPropagation();
-                if (confirm('¿Eliminar esta nota?')) onDelete();
-              }}
-              style={{
-                background: 'transparent',
-                border: 'none',
-                color: 'var(--text-muted)',
-                cursor: 'pointer',
-                padding: '2px 4px',
-                opacity: 0,
-                transition: 'all 0.2s'
-              }}
-            >
-              <Trash2 size={12} />
-            </button>
           </div>
         </div>
 
@@ -588,9 +651,46 @@ function NoteItem({ note, viewMode, isSelected, onClick, onDelete, onContextMenu
         )}
       </div>
 
+      <button
+        className="delete-note-btn"
+        onClick={e => {
+          e.stopPropagation();
+          onDelete();
+        }}
+        style={{
+          position: 'absolute',
+          right: 14,
+          top: '50%',
+          transform: 'translateY(-50%)',
+          background: 'rgba(20, 20, 25, 0.85)',
+          backdropFilter: 'blur(6px)',
+          border: '1px solid var(--border)',
+          color: 'var(--text-muted)',
+          cursor: 'pointer',
+          opacity: 0,
+          transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          width: 28,
+          height: 28,
+          borderRadius: '50%',
+          boxShadow: '0 4px 12px rgba(0, 0, 0, 0.4)',
+          zIndex: 5,
+        }}
+      >
+        <Trash2 size={14} />
+      </button>
+
       <style>{`
         .note-item:hover .delete-note-btn { opacity: 1 !important; }
-        .note-item:hover .delete-note-btn:hover { color: var(--danger) !important; }
+        .note-item:hover .delete-note-btn:hover { 
+          color: #ff4d4d !important; 
+          background: rgba(239, 68, 68, 0.2) !important;
+          border-color: rgba(239, 68, 68, 0.4) !important;
+          box-shadow: 0 0 12px rgba(239, 68, 68, 0.35) !important;
+          transform: translateY(-50%) scale(1.08) !important;
+        }
       `}</style>
     </div>
   );

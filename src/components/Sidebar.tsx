@@ -375,24 +375,24 @@ export default function Sidebar({
             position: 'fixed',
             left: recentBtnRef.current.getBoundingClientRect().left,
             bottom: window.innerHeight - recentBtnRef.current.getBoundingClientRect().top + 4,
-            width: 240,
+            width: 312,
             background: 'var(--bg-modal)',
             border: '1px solid var(--border)',
             borderRadius: 'var(--radius-md)',
-            padding: 6,
+            padding: 8,
             boxShadow: '0 -8px 24px rgba(0,0,0,0.4)',
             zIndex: 100000,
             display: 'flex',
             flexDirection: 'column',
-            gap: 2,
+            gap: 3,
           }}
           onClick={(e) => e.stopPropagation()}
         >
-          <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', padding: '6px 8px 4px', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+          <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-secondary)', padding: '8px 10px 6px', textTransform: 'uppercase', letterSpacing: 0.5 }}>
             Últimas notas
           </div>
           {recentNotes.length === 0 ? (
-            <div style={{ fontSize: 12, color: 'var(--text-muted)', padding: '12px 8px', textAlign: 'center' }}>
+            <div style={{ fontSize: 15.5, color: 'var(--text-muted)', padding: '16px 10px', textAlign: 'center' }}>
               Sin notas
             </div>
           ) : (
@@ -407,9 +407,9 @@ export default function Sidebar({
                     display: 'flex',
                     flexDirection: 'column',
                     alignItems: 'flex-start',
-                    gap: 2,
-                    padding: '8px 10px',
-                    fontSize: 12,
+                    gap: 3,
+                    padding: '10px 14px',
+                    fontSize: 15,
                     background: 'transparent',
                     color: 'var(--text-primary)',
                     border: 'none',
@@ -429,10 +429,10 @@ export default function Sidebar({
                     {note.title || 'Sin título'}
                   </span>
                   <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'flex-end' }}>
-                    <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+                    <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>
                       {timeAgo(note.updated_at)}
                     </span>
-                    <span style={{ fontSize: 10, color: 'var(--text-muted)', opacity: 0.75 }}>
+                    <span style={{ fontSize: 13, color: 'var(--text-muted)', opacity: 0.75 }}>
                       {new Date(note.updated_at).toLocaleDateString('es-ES', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
                     </span>
                   </div>

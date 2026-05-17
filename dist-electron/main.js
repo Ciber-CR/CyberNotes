@@ -1,44 +1,32 @@
-import { app, ipcMain, shell, session, dialog, BrowserWindow, screen, Tray, Menu } from "electron";
-import path from "path";
-import fs from "fs";
-import { fileURLToPath } from "url";
-import { createRequire } from "module";
-const __dirname$1 = path.dirname(fileURLToPath(import.meta.url));
-const require$1 = createRequire(import.meta.url);
-const isDev = !app.isPackaged;
-let iconPath = path.join(__dirname$1, "..", "public", "icon.png");
-if (!isDev) {
-  iconPath = path.join(app.getAppPath(), "dist", "icon.png");
+import { app as l, ipcMain as o, shell as N, session as D, dialog as L, BrowserWindow as b, Tray as P, Menu as k } from "electron";
+import d from "path";
+import u from "fs";
+import { fileURLToPath as U } from "url";
+import { createRequire as M } from "module";
+const g = d.dirname(U(import.meta.url)), v = M(import.meta.url), y = !l.isPackaged;
+let S = d.join(g, "..", "public", "icon.png");
+y || (S = d.join(l.getAppPath(), "dist", "icon.png"));
+if (!u.existsSync(S)) {
+  const n = d.join(y ? d.join(g, "..", "public") : d.join(l.getAppPath(), "dist"), "icon.ico");
+  u.existsSync(n) && (S = n);
 }
-if (!fs.existsSync(iconPath)) {
-  const fallbackIcon = path.join(isDev ? path.join(__dirname$1, "..", "public") : path.join(app.getAppPath(), "dist"), "icon.ico");
-  if (fs.existsSync(fallbackIcon)) iconPath = fallbackIcon;
+const x = v("bcryptjs"), C = l.getPath("userData"), T = d.join(C, "cybernotes.db"), w = d.join(C, "images"), { v4: j } = v("uuid");
+let h = null, m = null;
+function F() {
+  if (!h) return;
+  const n = h.export();
+  u.writeFileSync(T, Buffer.from(n));
 }
-const bcrypt = require$1("bcryptjs");
-const userDataPath = app.getPath("userData");
-const dbPath = path.join(userDataPath, "cybernotes.db");
-const imagesPath = path.join(userDataPath, "images");
-const { v4: uuidv4 } = require$1("uuid");
-let db = null;
-let SQL = null;
-function saveDbToDisk() {
-  if (!db) return;
-  const data = db.export();
-  fs.writeFileSync(dbPath, Buffer.from(data));
-}
-async function initDatabase() {
-  const sqlWasmPath = isDev ? path.join(__dirname$1, "..", "node_modules", "sql.js", "dist", "sql-wasm.wasm") : path.join(process.resourcesPath, "sql-wasm.wasm");
-  const initSqlJs = require$1("sql.js");
-  SQL = await initSqlJs({
-    locateFile: () => sqlWasmPath
-  });
-  if (fs.existsSync(dbPath)) {
-    const fileBuffer = fs.readFileSync(dbPath);
-    db = new SQL.Database(fileBuffer);
-  } else {
-    db = new SQL.Database();
-  }
-  db.run(`
+async function H() {
+  const n = y ? d.join(g, "..", "node_modules", "sql.js", "dist", "sql-wasm.wasm") : d.join(process.resourcesPath, "sql-wasm.wasm");
+  if (m = await v("sql.js")({
+    locateFile: () => n
+  }), u.existsSync(T)) {
+    const s = u.readFileSync(T);
+    h = new m.Database(s);
+  } else
+    h = new m.Database();
+  h.run(`
     CREATE TABLE IF NOT EXISTS settings (
       key   TEXT PRIMARY KEY,
       value TEXT NOT NULL
@@ -63,342 +51,232 @@ async function initDatabase() {
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
-  `);
-  saveDbToDisk();
-  if (!fs.existsSync(imagesPath)) {
-    fs.mkdirSync(imagesPath, { recursive: true });
-  }
+  `), F(), u.existsSync(w) || u.mkdirSync(w, { recursive: !0 });
 }
-function queryAll(sql, params = []) {
-  if (!db) throw new Error("Base de datos no inicializada");
-  const stmt = db.prepare(sql);
-  stmt.bind(params);
-  const rows = [];
-  while (stmt.step()) {
-    rows.push(stmt.getAsObject());
-  }
-  stmt.free();
-  return rows;
+function p(n, e = []) {
+  if (!h) throw new Error("Base de datos no inicializada");
+  const s = h.prepare(n);
+  s.bind(e);
+  const i = [];
+  for (; s.step(); )
+    i.push(s.getAsObject());
+  return s.free(), i;
 }
-function queryGet(sql, params = []) {
-  const rows = queryAll(sql, params);
-  return rows.length > 0 ? rows[0] : null;
+function f(n, e = []) {
+  const s = p(n, e);
+  return s.length > 0 ? s[0] : null;
 }
-function runQuery(sql, params = []) {
-  if (!db) throw new Error("Base de datos no inicializada");
-  db.run(sql, params);
-  saveDbToDisk();
+function a(n, e = []) {
+  if (!h) throw new Error("Base de datos no inicializada");
+  h.run(n, e), F();
 }
-let mainWindow = null;
-let tray = null;
-let isQuitting = false;
-function createTray() {
+let t = null, E = null, _ = !1, O = !1;
+function R() {
+  if (!t) return;
+  const n = f("SELECT value FROM settings WHERE key = ?", ["is_maximized"]);
+  (n == null ? void 0 : n.value) === "true" && t.maximize(), t.show(), t.focus();
+}
+function B() {
   try {
-    tray = new Tray(iconPath);
-    const contextMenu = Menu.buildFromTemplate([
-      { label: "Abrir CyberNotes", click: () => mainWindow == null ? void 0 : mainWindow.show() },
+    E = new P(S);
+    const n = k.buildFromTemplate([
+      { label: "Abrir CyberNotes", click: R },
       { type: "separator" },
       {
         label: "Salir",
         click: () => {
-          isQuitting = true;
-          app.quit();
+          _ = !0, l.quit();
         }
       }
     ]);
-    tray.setToolTip("CyberNotes");
-    tray.setContextMenu(contextMenu);
-    tray.on("double-click", () => {
-      mainWindow == null ? void 0 : mainWindow.show();
+    E.setToolTip("CyberNotes"), E.setContextMenu(n), E.on("click", () => {
+      t != null && t.isVisible() ? t.hide() : R();
     });
-  } catch (err) {
-    console.error("Failed to create tray:", err);
+  } catch (n) {
+    console.error("Failed to create tray:", n);
   }
 }
-function createWindow() {
-  const boundsJson = queryGet("SELECT value FROM settings WHERE key = ?", ["window_bounds"]);
-  const isMaximizedVal = queryGet("SELECT value FROM settings WHERE key = ?", ["is_maximized"]);
-  const primaryDisplay = screen.getPrimaryDisplay();
-  const { width: scrW, height: scrH } = primaryDisplay.workAreaSize;
-  let bounds = { width: 1100, height: 700, x: void 0, y: void 0 };
-  if (boundsJson) {
+function A() {
+  const n = f("SELECT value FROM settings WHERE key = ?", ["window_bounds"]), e = f("SELECT value FROM settings WHERE key = ?", ["is_maximized"]);
+  let s = { width: 1100, height: 700, x: void 0, y: void 0 };
+  if (n)
     try {
-      const savedBounds = JSON.parse(boundsJson.value);
-      if (savedBounds.width > 400 && savedBounds.width <= scrW + 100 && savedBounds.height > 400 && savedBounds.height <= scrH + 100) {
-        bounds = savedBounds;
-      }
-    } catch (e) {
+      const r = JSON.parse(n.value);
+      r.width > 400 && r.height > 400 && (s = r);
+    } catch {
     }
-  }
-  mainWindow = new BrowserWindow({
-    width: bounds.width,
-    height: bounds.height,
-    x: bounds.x,
-    y: bounds.y,
-    center: !bounds.x,
+  t = new b({
+    width: s.width,
+    height: s.height,
+    x: s.x,
+    y: s.y,
+    center: !s.x,
     minWidth: 900,
     minHeight: 600,
-    frame: false,
+    frame: !1,
     titleBarStyle: "hidden",
     backgroundColor: "#0d0d14",
-    icon: iconPath,
+    icon: S,
     webPreferences: {
-      preload: path.join(__dirname$1, "preload.mjs"),
-      contextIsolation: true,
-      nodeIntegration: false,
-      webSecurity: false
+      preload: d.join(g, "preload.mjs"),
+      contextIsolation: !0,
+      nodeIntegration: !1,
+      webSecurity: !1
     },
-    show: false
+    show: !1
   });
-  const saveWindowState = () => {
-    if (!mainWindow || mainWindow.isDestroyed()) return;
-    const isMax = mainWindow.isMaximized();
-    runQuery("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", ["is_maximized", isMax ? "true" : "false"]);
-    if (!isMax) {
-      const b = mainWindow.getBounds();
-      if (b.width > 100 && b.height > 100) {
-        runQuery("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", ["window_bounds", JSON.stringify(b)]);
-      }
-    }
+  const i = () => {
+    if (!t || t.isDestroyed()) return;
+    const r = t.isMaximized();
+    a("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", ["is_maximized", r ? "true" : "false"]);
+    const c = t.getBounds();
+    c.width > 100 && c.height > 100 && a("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", ["window_bounds", JSON.stringify(c)]);
   };
-  mainWindow.on("resize", saveWindowState);
-  mainWindow.on("move", saveWindowState);
-  mainWindow.on("close", saveWindowState);
-  mainWindow.on("maximize", saveWindowState);
-  mainWindow.on("unmaximize", saveWindowState);
-  mainWindow.on("close", (event) => {
-    const closeToTray = queryGet("SELECT value FROM settings WHERE key = ?", ["close_to_tray"]);
-    if ((closeToTray == null ? void 0 : closeToTray.value) === "true" && !isQuitting) {
-      event.preventDefault();
-      mainWindow == null ? void 0 : mainWindow.hide();
-      return false;
-    }
-    if (tray && !tray.isDestroyed()) {
-      tray.destroy();
-      tray = null;
-    }
-  });
-  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (url.startsWith("http")) {
-      shell.openExternal(url);
-    }
-    return { action: "deny" };
-  });
-  mainWindow.webContents.on("context-menu", (event, params) => {
-    mainWindow == null ? void 0 : mainWindow.webContents.send("context-menu-data", {
-      x: params.x,
-      y: params.y,
-      suggestions: params.dictionarySuggestions,
-      misspelledWord: params.misspelledWord,
-      linkURL: params.linkURL
+  t.on("resize", i), t.on("move", i), t.on("close", i), t.on("maximize", i), t.on("unmaximize", i), t.on("hide", i), t.on("close", (r) => {
+    const c = f("SELECT value FROM settings WHERE key = ?", ["close_to_tray"]);
+    if ((c == null ? void 0 : c.value) === "true" && !_)
+      return r.preventDefault(), t == null || t.hide(), !1;
+    if (O)
+      return r.preventDefault(), L.showMessageBox(t, {
+        type: "question",
+        buttons: ["Salir sin guardar", "Cancelar"],
+        defaultId: 1,
+        title: "Cambios sin guardar",
+        message: "Tienes cambios sin guardar en la nota actual. ¿Salir sin guardar?"
+      }).then((I) => {
+        I.response === 0 && (O = !1, _ = !0, t == null || t.close());
+      }), !1;
+    E && !E.isDestroyed() && (E.destroy(), E = null);
+  }), t.webContents.setWindowOpenHandler(({ url: r }) => (r.startsWith("http") && N.openExternal(r), { action: "deny" })), t.webContents.on("context-menu", (r, c) => {
+    t == null || t.webContents.send("context-menu-data", {
+      x: c.x,
+      y: c.y,
+      suggestions: c.dictionarySuggestions,
+      misspelledWord: c.misspelledWord,
+      linkURL: c.linkURL
     });
-  });
-  if (isDev) {
-    mainWindow.loadURL("http://localhost:5173");
-  } else {
-    mainWindow.loadFile(path.join(__dirname$1, "../dist/index.html"));
-  }
-  mainWindow.once("ready-to-show", () => {
-    if ((isMaximizedVal == null ? void 0 : isMaximizedVal.value) === "true") {
-      mainWindow == null ? void 0 : mainWindow.maximize();
-    }
-    if (!process.argv.includes("--hidden")) {
-      mainWindow.show();
-      mainWindow.focus();
-    }
+  }), y ? t.loadURL("http://localhost:5173") : t.loadFile(d.join(g, "../dist/index.html")), t.once("ready-to-show", () => {
+    process.argv.includes("--hidden") || ((e == null ? void 0 : e.value) === "true" && (t == null || t.maximize()), t.show(), t.focus());
   });
 }
-ipcMain.handle("window-minimize", () => mainWindow == null ? void 0 : mainWindow.minimize());
-ipcMain.handle("window-maximize-toggle", () => {
-  if (mainWindow == null ? void 0 : mainWindow.isMaximized()) mainWindow.unmaximize();
-  else mainWindow == null ? void 0 : mainWindow.maximize();
+o.handle("window-minimize", () => t == null ? void 0 : t.minimize());
+o.handle("window-maximize-toggle", () => {
+  t != null && t.isMaximized() ? t.unmaximize() : t == null || t.maximize();
 });
-ipcMain.handle("window-close", () => mainWindow == null ? void 0 : mainWindow.close());
-ipcMain.handle("open-dev-tools", () => mainWindow == null ? void 0 : mainWindow.webContents.openDevTools({ mode: "detach" }));
-ipcMain.handle("open-data-folder", () => shell.openPath(userDataPath));
-ipcMain.handle("replace-misspelling", (_e, word) => mainWindow == null ? void 0 : mainWindow.webContents.replaceMisspelling(word));
-ipcMain.handle("add-to-dictionary", (_e, word) => {
-  session.defaultSession.addWordToSpellCheckerDictionary(word);
+o.handle("window-close", () => t == null ? void 0 : t.close());
+o.handle("window:unsavedChanges:set", (n, e) => {
+  O = e;
 });
-ipcMain.handle("auth:hasPassword", () => {
-  const row = queryGet("SELECT value FROM settings WHERE key = ?", ["password_hash"]);
-  return !!row;
+o.handle("open-dev-tools", () => t == null ? void 0 : t.webContents.openDevTools({ mode: "detach" }));
+o.handle("open-data-folder", () => N.openPath(C));
+o.handle("replace-misspelling", (n, e) => t == null ? void 0 : t.webContents.replaceMisspelling(e));
+o.handle("add-to-dictionary", (n, e) => {
+  D.defaultSession.addWordToSpellCheckerDictionary(e);
 });
-ipcMain.handle("auth:setPassword", async (_e, password) => {
-  const hash = await bcrypt.hash(password, 10);
-  runQuery("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", ["password_hash", hash]);
-  return true;
+o.handle("auth:hasPassword", () => !!f("SELECT value FROM settings WHERE key = ?", ["password_hash"]));
+o.handle("auth:setPassword", async (n, e) => {
+  const s = await x.hash(e, 10);
+  return a("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", ["password_hash", s]), !0;
 });
-ipcMain.handle("auth:verifyPassword", async (_e, password) => {
-  const row = queryGet("SELECT value FROM settings WHERE key = ?", ["password_hash"]);
-  if (!row) return true;
-  return bcrypt.compare(password, row.value);
+o.handle("auth:verifyPassword", async (n, e) => {
+  const s = f("SELECT value FROM settings WHERE key = ?", ["password_hash"]);
+  return s ? x.compare(e, s.value) : !0;
 });
-ipcMain.handle("auth:removePassword", () => {
-  runQuery("DELETE FROM settings WHERE key = ?", ["password_hash"]);
-  return true;
+o.handle("auth:removePassword", () => (a("DELETE FROM settings WHERE key = ?", ["password_hash"]), !0));
+o.handle("settings:get", (n, e) => {
+  const s = f("SELECT value FROM settings WHERE key = ?", [e]);
+  return s ? s.value : null;
 });
-ipcMain.handle("settings:get", (_e, key) => {
-  const row = queryGet("SELECT value FROM settings WHERE key = ?", [key]);
-  return row ? row.value : null;
-});
-ipcMain.handle("settings:set", (_e, key, value) => {
-  runQuery("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", [key, value]);
-  return true;
-});
-ipcMain.handle("settings:setAutoStart", (_e, enable) => {
-  app.setLoginItemSettings({
-    openAtLogin: enable,
-    openAsHidden: true,
-    // macOS
-    args: enable ? ["--hidden"] : []
-    // Windows / Linux
-  });
-  runQuery("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", ["auto_start", enable ? "true" : "false"]);
-  return true;
-});
-ipcMain.handle("settings:getAutoStart", () => {
-  const settings = app.getLoginItemSettings();
-  return settings.openAtLogin;
-});
-ipcMain.handle("folders:getAll", () => {
-  return queryAll("SELECT * FROM folders ORDER BY name COLLATE NOCASE ASC");
-});
-ipcMain.handle("folders:create", (_e, folder) => {
-  runQuery(
-    "INSERT INTO folders (id, name, icon, color, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-    [folder.id, folder.name, folder.icon, folder.color, folder.sort_order, folder.created_at]
-  );
-  return folder;
-});
-ipcMain.handle("folders:update", (_e, folder) => {
-  runQuery(
-    "UPDATE folders SET name = ?, icon = ?, color = ?, sort_order = ? WHERE id = ?",
-    [folder.name, folder.icon, folder.color, folder.sort_order, folder.id]
-  );
-  return true;
-});
-ipcMain.handle("folders:delete", (_e, id) => {
-  runQuery("DELETE FROM notes WHERE folder_id = ?", [id]);
-  runQuery("DELETE FROM folders WHERE id = ?", [id]);
-  return true;
-});
-ipcMain.handle("notes:getAll", () => {
-  return queryAll("SELECT * FROM notes ORDER BY pinned DESC, updated_at DESC");
-});
-ipcMain.handle("notes:getByFolder", (_e, folderId) => {
-  if (!folderId) {
-    return queryAll("SELECT * FROM notes ORDER BY pinned DESC, updated_at DESC");
-  }
-  return queryAll("SELECT * FROM notes WHERE folder_id = ? ORDER BY pinned DESC, updated_at DESC", [folderId]);
-});
-ipcMain.handle("notes:save", (_e, note) => {
-  const exists = queryGet("SELECT id FROM notes WHERE id = ?", [note.id]);
-  if (exists) {
-    runQuery(
-      "UPDATE notes SET folder_id = ?, title = ?, content = ?, preview = ?, pinned = ?, updated_at = ? WHERE id = ?",
-      [note.folder_id, note.title, note.content, note.preview, note.pinned, note.updated_at, note.id]
-    );
-  } else {
-    runQuery(
-      "INSERT INTO notes (id, folder_id, title, content, preview, pinned, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-      [note.id, note.folder_id, note.title, note.content, note.preview, note.pinned, note.created_at, note.updated_at]
-    );
-  }
-  return note;
-});
-ipcMain.handle("notes:delete", (_e, id) => {
-  runQuery("DELETE FROM notes WHERE id = ?", [id]);
-  return true;
-});
-ipcMain.handle("notes:search", (_e, query) => {
-  const q = `%${query}%`;
-  return queryAll(
+o.handle("settings:set", (n, e, s) => (a("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", [e, s]), !0));
+o.handle("settings:setAutoStart", (n, e) => (l.setLoginItemSettings({
+  openAtLogin: e,
+  openAsHidden: !0,
+  // macOS
+  args: e ? ["--hidden"] : []
+  // Windows / Linux
+}), a("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", ["auto_start", e ? "true" : "false"]), !0));
+o.handle("settings:getAutoStart", () => l.getLoginItemSettings().openAtLogin);
+o.handle("folders:getAll", () => p("SELECT * FROM folders ORDER BY name COLLATE NOCASE ASC"));
+o.handle("folders:create", (n, e) => (a(
+  "INSERT INTO folders (id, name, icon, color, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+  [e.id, e.name, e.icon, e.color, e.sort_order, e.created_at]
+), e));
+o.handle("folders:update", (n, e) => (a(
+  "UPDATE folders SET name = ?, icon = ?, color = ?, sort_order = ? WHERE id = ?",
+  [e.name, e.icon, e.color, e.sort_order, e.id]
+), !0));
+o.handle("folders:delete", (n, e) => (a("DELETE FROM notes WHERE folder_id = ?", [e]), a("DELETE FROM folders WHERE id = ?", [e]), !0));
+o.handle("notes:getAll", () => p("SELECT * FROM notes ORDER BY pinned DESC, updated_at DESC"));
+o.handle("notes:getByFolder", (n, e) => e ? p("SELECT * FROM notes WHERE folder_id = ? ORDER BY pinned DESC, updated_at DESC", [e]) : p("SELECT * FROM notes ORDER BY pinned DESC, updated_at DESC"));
+o.handle("notes:save", (n, e) => (f("SELECT id FROM notes WHERE id = ?", [e.id]) ? a(
+  "UPDATE notes SET folder_id = ?, title = ?, content = ?, preview = ?, pinned = ?, updated_at = ? WHERE id = ?",
+  [e.folder_id, e.title, e.content, e.preview, e.pinned, e.updated_at, e.id]
+) : a(
+  "INSERT INTO notes (id, folder_id, title, content, preview, pinned, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+  [e.id, e.folder_id, e.title, e.content, e.preview, e.pinned, e.created_at, e.updated_at]
+), e));
+o.handle("notes:delete", (n, e) => (a("DELETE FROM notes WHERE id = ?", [e]), !0));
+o.handle("notes:search", (n, e) => {
+  const s = `%${e}%`;
+  return p(
     "SELECT * FROM notes WHERE title LIKE ? OR preview LIKE ? OR content LIKE ? ORDER BY pinned DESC, updated_at DESC",
-    [q, q, q]
+    [s, s, s]
   );
 });
-ipcMain.handle("images:selectAndSave", async () => {
-  const result = await dialog.showOpenDialog(mainWindow, {
+o.handle("images:selectAndSave", async () => {
+  const n = await L.showOpenDialog(t, {
     title: "Seleccionar imagen",
     filters: [{ name: "Imágenes", extensions: ["png", "jpg", "jpeg", "gif", "webp", "svg"] }],
     properties: ["openFile"]
   });
-  if (result.canceled || !result.filePaths.length) return null;
-  const sourcePath = result.filePaths[0];
-  const ext = path.extname(sourcePath);
-  const filename = `${uuidv4()}${ext}`;
-  const destPath = path.join(imagesPath, filename);
-  fs.copyFileSync(sourcePath, destPath);
-  return `file:///${destPath.replace(/\\/g, "/")}`;
+  if (n.canceled || !n.filePaths.length) return null;
+  const e = n.filePaths[0], s = d.extname(e), i = `${j()}${s}`, r = d.join(w, i);
+  return u.copyFileSync(e, r), `file:///${r.replace(/\\/g, "/")}`;
 });
-ipcMain.handle("data:export", async () => {
-  const result = await dialog.showSaveDialog(mainWindow, {
+o.handle("data:export", async () => {
+  const n = await L.showSaveDialog(t, {
     title: "Exportar datos de CyberNotes",
     defaultPath: "cybernotes-export.json",
     filters: [{ name: "JSON", extensions: ["json"] }]
   });
-  if (result.canceled || !result.filePath) return false;
-  const folders = queryAll("SELECT * FROM folders");
-  const notes = queryAll("SELECT * FROM notes");
-  const exportData = { folders, notes, version: 1 };
-  fs.writeFileSync(result.filePath, JSON.stringify(exportData, null, 2));
-  return true;
+  if (n.canceled || !n.filePath) return !1;
+  const e = p("SELECT * FROM folders"), s = p("SELECT * FROM notes"), i = { folders: e, notes: s, version: 1 };
+  return u.writeFileSync(n.filePath, JSON.stringify(i, null, 2)), !0;
 });
-ipcMain.handle("data:import", async () => {
-  const result = await dialog.showOpenDialog(mainWindow, {
+o.handle("data:import", async () => {
+  const n = await L.showOpenDialog(t, {
     title: "Importar datos a CyberNotes",
     filters: [{ name: "JSON", extensions: ["json"] }],
     properties: ["openFile"]
   });
-  if (result.canceled || !result.filePaths.length) return false;
+  if (n.canceled || !n.filePaths.length) return !1;
   try {
-    const data = JSON.parse(fs.readFileSync(result.filePaths[0], "utf-8"));
-    if (!data.folders || !data.notes) return false;
-    const backupPath = dbPath + ".backup-" + Date.now();
-    if (fs.existsSync(dbPath)) fs.copyFileSync(dbPath, backupPath);
-    for (const f of data.folders) {
-      runQuery(
+    const e = JSON.parse(u.readFileSync(n.filePaths[0], "utf-8"));
+    if (!e.folders || !e.notes) return !1;
+    const s = T + ".backup-" + Date.now();
+    u.existsSync(T) && u.copyFileSync(T, s);
+    for (const i of e.folders)
+      a(
         "INSERT OR REPLACE INTO folders (id, name, icon, color, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-        [f.id, f.name, f.icon, f.color, f.sort_order, f.created_at]
+        [i.id, i.name, i.icon, i.color, i.sort_order, i.created_at]
       );
-    }
-    for (const n of data.notes) {
-      runQuery(
+    for (const i of e.notes)
+      a(
         "INSERT OR REPLACE INTO notes (id, folder_id, title, content, preview, pinned, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        [n.id, n.folder_id, n.title, n.content, n.preview, n.pinned, n.created_at, n.updated_at]
+        [i.id, i.folder_id, i.title, i.content, i.preview, i.pinned, i.created_at, i.updated_at]
       );
-    }
-    return true;
+    return !0;
   } catch (e) {
-    console.error("Import error:", e);
-    return false;
+    return console.error("Import error:", e), !1;
   }
 });
-const gotTheLock = app.requestSingleInstanceLock();
-if (!gotTheLock) {
-  app.quit();
-} else {
-  app.on("second-instance", (event, commandLine, workingDirectory) => {
-    if (mainWindow) {
-      if (mainWindow.isMinimized()) mainWindow.restore();
-      mainWindow.show();
-      mainWindow.focus();
-    }
+const q = l.requestSingleInstanceLock();
+q ? (l.on("second-instance", (n, e, s) => {
+  R();
+}), l.whenReady().then(async () => {
+  D.defaultSession.setSpellCheckerLanguages(["es-ES", "en-US"]), await H(), A(), B(), l.on("activate", () => {
+    b.getAllWindows().length === 0 ? A() : R();
   });
-  app.whenReady().then(async () => {
-    session.defaultSession.setSpellCheckerLanguages(["es-ES", "en-US"]);
-    await initDatabase();
-    createWindow();
-    createTray();
-    app.on("activate", () => {
-      if (BrowserWindow.getAllWindows().length === 0) createWindow();
-      else mainWindow == null ? void 0 : mainWindow.show();
-    });
-  });
-  app.on("window-all-closed", () => {
-    if (process.platform !== "darwin") {
-      if (!tray) app.quit();
-    }
-  });
-}
+}), l.on("window-all-closed", () => {
+  process.platform !== "darwin" && (E || l.quit());
+})) : l.quit();

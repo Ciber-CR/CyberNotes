@@ -8,8 +8,6 @@ interface Props {
   onThemeChange: (t: ThemeId) => void;
   colorIntensity: number;
   onIntensityChange: (v: number) => void;
-  uiScale: number;
-  onScaleChange: (s: number) => void;
   bgImage: string | null;
   onBgImageChange: (url: string | null) => void;
   glassBlur: number;
@@ -31,7 +29,7 @@ interface Props {
 type Tab = 'general' | 'security' | 'about';
 
 export default function SettingsModal({ 
-  currentTheme, onThemeChange, colorIntensity, onIntensityChange, uiScale, onScaleChange, 
+  currentTheme, onThemeChange, colorIntensity, onIntensityChange, 
   bgImage, onBgImageChange, glassBlur, onBlurChange, bgOpacity, onOpacityChange,
   autoLockMinutes, onAutoLockChange,
   rememberLastNote, onRememberLastNoteChange,
@@ -287,51 +285,7 @@ export default function SettingsModal({
 
               <div className="divider" />
  
-              <div>
-                <h3 style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 12, textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                  Escala de Interfaz
-                </h3>
-                <div style={{ 
-                  padding: '16px',
-                  background: 'var(--bg-surface)',
-                  borderRadius: 'var(--radius-md)',
-                  border: '1px solid var(--border)',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 12
-                }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontSize: 13, color: 'var(--text-primary)', fontWeight: 500 }}>Tamaño del texto global</span>
-                    <span style={{ fontSize: 13, color: 'var(--accent-light)', fontWeight: 700, background: 'var(--accent-dim)', padding: '2px 8px', borderRadius: 4 }}>
-                      {Math.round(uiScale * 100)}%
-                    </span>
-                  </div>
-                  <input 
-                    type="range"
-                    min="0.8"
-                    max="1.5"
-                    step="0.05"
-                    value={uiScale}
-                    onChange={(e) => onScaleChange(parseFloat(e.target.value))}
-                    style={{
-                      width: '100%',
-                      height: 6,
-                      background: 'var(--border)',
-                      borderRadius: 3,
-                      appearance: 'none',
-                      outline: 'none',
-                      cursor: 'pointer'
-                    }}
-                  />
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--text-muted)' }}>
-                    <span>Pequeño</span>
-                    <span>Normal (100%)</span>
-                    <span>Grande</span>
-                  </div>
-                </div>
-              </div>
 
-              <div className="divider" />
 
               <div>
                 <h3 style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 12, textTransform: 'uppercase', letterSpacing: 0.5 }}>

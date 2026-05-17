@@ -476,6 +476,8 @@ export default function MainApp({ currentTheme, onThemeChange, colorIntensity, o
           onToggleLayout={() => setLayoutMode(prev => prev === 1 ? 3 : prev - 1 as any)}
           showLineCounter={showLineCounter}
           autosaveEnabled={autosaveEnabled}
+          uiScale={uiScale}
+          onScaleChange={handleScaleChange}
         />
       </div>
 
@@ -485,8 +487,6 @@ export default function MainApp({ currentTheme, onThemeChange, colorIntensity, o
           onThemeChange={onThemeChange}
           colorIntensity={colorIntensity}
           onIntensityChange={onIntensityChange}
-          uiScale={uiScale}
-          onScaleChange={handleScaleChange}
           bgImage={bgImage}
           onBgImageChange={handleBgImageChange}
           glassBlur={glassBlur}
