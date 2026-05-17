@@ -144,9 +144,15 @@ export default function NoteEditor({
     return () => {
       window.removeEventListener('keydown', handleKeyboardActivity, true);
       window.removeEventListener('keyup', handleKeyboardActivity, true);
-      if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
     };
   }, [autoUnlockCapsLock, autoUnlockCapsLockTimeout]);
+
+  // Isolated cleanup for toast timeout on component unmount
+  useEffect(() => {
+    return () => {
+      if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+    };
+  }, []);
 
   // Countdown timer loop effect
   useEffect(() => {
