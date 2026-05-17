@@ -691,6 +691,50 @@ export default function NoteEditor({
                   100% { transform: scale(0.85); opacity: 0.5; }
                 }
               `}</style>
+              {/* Countdown Timer Badge */}
+              <AnimatePresence>
+                {autoUnlockCapsLock && isCapsLockActive && timeLeft > 0 && (
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.8, x: 5 }}
+                    animate={{ opacity: 1, scale: 1, x: 0 }}
+                    exit={{ opacity: 0, scale: 0.8, x: 5 }}
+                    transition={{ duration: 0.2, ease: 'easeOut' }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      background: 'rgba(239, 68, 68, 0.12)',
+                      border: '1px solid rgba(239, 68, 68, 0.4)',
+                      color: '#ef4444',
+                      padding: '2px 6px',
+                      borderRadius: 'var(--radius-sm)',
+                      fontSize: 10,
+                      fontWeight: 700,
+                      fontFamily: 'var(--font-mono)',
+                      boxShadow: '0 0 6px rgba(239, 68, 68, 0.2)',
+                      pointerEvents: 'none',
+                      whiteSpace: 'nowrap',
+                      gap: 4,
+                      animation: 'cyber-warning-pulse 1.5s infinite ease-in-out',
+                    }}
+                  >
+                    <span>⏱️</span>
+                    <span>
+                      {(() => {
+                        if (timeLeft < 60) return `${timeLeft}s`;
+                        if (timeLeft < 3600) {
+                          const m = Math.floor(timeLeft / 60);
+                          const s = timeLeft % 60;
+                          return `${m}:${s < 10 ? '0' : ''}${s}`;
+                        }
+                        const h = Math.floor(timeLeft / 3600);
+                        const m = Math.floor((timeLeft % 3600) / 60);
+                        return `${h}h ${m}m`;
+                      })()}
+                    </span>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
               <button 
                 onClick={() => {
                   const nextVal = !autoUnlockCapsLock;
@@ -759,50 +803,6 @@ export default function NoteEditor({
                   }} />
                 )}
               </button>
-
-              {/* Countdown Timer Badge */}
-              <AnimatePresence>
-                {autoUnlockCapsLock && isCapsLockActive && timeLeft > 0 && (
-                  <motion.div
-                    initial={{ opacity: 0, scale: 0.8, x: -5 }}
-                    animate={{ opacity: 1, scale: 1, x: 0 }}
-                    exit={{ opacity: 0, scale: 0.8, x: -5 }}
-                    transition={{ duration: 0.2, ease: 'easeOut' }}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      background: 'rgba(239, 68, 68, 0.12)',
-                      border: '1px solid rgba(239, 68, 68, 0.4)',
-                      color: '#ef4444',
-                      padding: '2px 6px',
-                      borderRadius: 'var(--radius-sm)',
-                      fontSize: 10,
-                      fontWeight: 700,
-                      fontFamily: 'var(--font-mono)',
-                      boxShadow: '0 0 6px rgba(239, 68, 68, 0.2)',
-                      pointerEvents: 'none',
-                      whiteSpace: 'nowrap',
-                      gap: 4,
-                      animation: 'cyber-warning-pulse 1.5s infinite ease-in-out',
-                    }}
-                  >
-                    <span>⏱️</span>
-                    <span>
-                      {(() => {
-                        if (timeLeft < 60) return `${timeLeft}s`;
-                        if (timeLeft < 3600) {
-                          const m = Math.floor(timeLeft / 60);
-                          const s = timeLeft % 60;
-                          return `${m}:${s < 10 ? '0' : ''}${s}`;
-                        }
-                        const h = Math.floor(timeLeft / 3600);
-                        const m = Math.floor((timeLeft % 3600) / 60);
-                        return `${h}h ${m}m`;
-                      })()}
-                    </span>
-                  </motion.div>
-                )}
-              </AnimatePresence>
 
               {/* Pin */}
               <button 
