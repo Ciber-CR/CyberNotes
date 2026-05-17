@@ -120,7 +120,7 @@ export default function NoteEditor({
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [isCapsLockActive, setIsCapsLockActive] = useState(false);
-  const capsLockTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const [timeLeft, setTimeLeft] = useState(0);
 
   useEffect(() => {
     const handleKeyboardActivity = (e: KeyboardEvent) => {
@@ -129,19 +129,10 @@ export default function NoteEditor({
       setIsCapsLockActive(!!capActive);
 
       // Manage inactivity timer if automated feature is enabled
-      if (autoUnlockCapsLock) {
-        if (capsLockTimerRef.current) clearTimeout(capsLockTimerRef.current);
-
-        if (capActive) {
-          capsLockTimerRef.current = setTimeout(async () => {
-            if (window.cyberNotesAPI && window.cyberNotesAPI.unlockCapsLock) {
-              const success = await window.cyberNotesAPI.unlockCapsLock();
-              if (success) {
-                setIsCapsLockActive(false);
-              }
-            }
-          }, autoUnlockCapsLockTimeout * 1000); // Dynamic inactivity timeout
-        }
+      if (autoUnlockCapsLock && capActive) {
+        setTimeLeft(autoUnlockCapsLockTimeout);
+      } else {
+        setTimeLeft(0);
       }
     };
 
@@ -151,9 +142,34 @@ export default function NoteEditor({
     return () => {
       window.removeEventListener('keydown', handleKeyboardActivity, true);
       window.removeEventListener('keyup', handleKeyboardActivity, true);
-      if (capsLockTimerRef.current) clearTimeout(capsLockTimerRef.current);
     };
   }, [autoUnlockCapsLock, autoUnlockCapsLockTimeout]);
+
+  // Countdown timer loop effect
+  useEffect(() => {
+    if (!autoUnlockCapsLock || !isCapsLockActive || timeLeft <= 0) return;
+
+    const timer = setTimeout(() => {
+      setTimeLeft(prev => prev - 1);
+    }, 1000);
+
+    return () => clearTimeout(timer);
+  }, [autoUnlockCapsLock, isCapsLockActive, timeLeft]);
+
+  // Unlock Caps Lock trigger effect when countdown hits 0
+  useEffect(() => {
+    if (autoUnlockCapsLock && isCapsLockActive && timeLeft === 0) {
+      const triggerUnlock = async () => {
+        if (window.cyberNotesAPI && window.cyberNotesAPI.unlockCapsLock) {
+          const success = await window.cyberNotesAPI.unlockCapsLock();
+          if (success) {
+            setIsCapsLockActive(false);
+          }
+        }
+      };
+      triggerUnlock();
+    }
+  }, [autoUnlockCapsLock, isCapsLockActive, timeLeft]);
 
   useEffect(() => {
     const closeMenu = () => {
@@ -720,6 +736,50 @@ export default function NoteEditor({
                   }} />
                 )}
               </button>
+
+              {/* Countdown Timer Badge */}
+              <AnimatePresence>
+                {autoUnlockCapsLock && isCapsLockActive && timeLeft > 0 && (
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.8, x: -5 }}
+                    animate={{ opacity: 1, scale: 1, x: 0 }}
+                    exit={{ opacity: 0, scale: 0.8, x: -5 }}
+                    transition={{ duration: 0.2, ease: 'easeOut' }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      background: 'rgba(239, 68, 68, 0.12)',
+                      border: '1px solid rgba(239, 68, 68, 0.4)',
+                      color: '#ef4444',
+                      padding: '2px 6px',
+                      borderRadius: 'var(--radius-sm)',
+                      fontSize: 10,
+                      fontWeight: 700,
+                      fontFamily: 'var(--font-mono)',
+                      boxShadow: '0 0 6px rgba(239, 68, 68, 0.2)',
+                      pointerEvents: 'none',
+                      whiteSpace: 'nowrap',
+                      gap: 4,
+                      animation: 'cyber-warning-pulse 1.5s infinite ease-in-out',
+                    }}
+                  >
+                    <span>⏱️</span>
+                    <span>
+                      {(() => {
+                        if (timeLeft < 60) return `${timeLeft}s`;
+                        if (timeLeft < 3600) {
+                          const m = Math.floor(timeLeft / 60);
+                          const s = timeLeft % 60;
+                          return `${m}:${s < 10 ? '0' : ''}${s}`;
+                        }
+                        const h = Math.floor(timeLeft / 3600);
+                        const m = Math.floor((timeLeft % 3600) / 60);
+                        return `${h}h ${m}m`;
+                      })()}
+                    </span>
+                  </motion.div>
+                )}
+              </AnimatePresence>
 
               {/* Pin */}
               <button 
