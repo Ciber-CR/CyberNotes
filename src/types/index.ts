@@ -78,6 +78,7 @@ declare global {
       addToDictionary: (word: string) => Promise<void>;
       // Keyboard
       unlockCapsLock: () => Promise<boolean>;
+      checkCapsLock: () => Promise<boolean>;
     };
   }
 }

@@ -123,14 +123,33 @@ export default function NoteEditor({
   const [timeLeft, setTimeLeft] = useState(0);
   const [capsToast, setCapsToast] = useState<string | null>(null);
   const toastTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const prevCapsActiveRef = useRef<boolean | null>(null);
 
+  // 1. Initial check on startup / mount
+  useEffect(() => {
+    const checkInitialCaps = async () => {
+      if (window.cyberNotesAPI && window.cyberNotesAPI.checkCapsLock) {
+        const isActive = await window.cyberNotesAPI.checkCapsLock();
+        if (isActive) {
+          setIsCapsLockActive(true);
+          prevCapsActiveRef.current = true;
+          if (autoUnlockCapsLock) {
+            setTimeLeft(autoUnlockCapsLockTimeout);
+          }
+        } else {
+          prevCapsActiveRef.current = false;
+        }
+      }
+    };
+    checkInitialCaps();
+  }, [autoUnlockCapsLock, autoUnlockCapsLockTimeout]);
+
+  // 2. Keyboard event listeners to capture physical typing updates
   useEffect(() => {
     const handleKeyboardActivity = (e: KeyboardEvent) => {
-      // Detect active modifier CapsLock state
       const capActive = e.getModifierState && e.getModifierState("CapsLock");
       setIsCapsLockActive(!!capActive);
 
-      // Manage inactivity timer if automated feature is enabled
       if (autoUnlockCapsLock && capActive) {
         setTimeLeft(autoUnlockCapsLockTimeout);
       } else {
@@ -147,14 +166,43 @@ export default function NoteEditor({
     };
   }, [autoUnlockCapsLock, autoUnlockCapsLockTimeout]);
 
-  // Isolated cleanup for toast timeout on component unmount
+  // 3. State transition toast trigger for physical CapsLock toggles
+  useEffect(() => {
+    // Avoid firing toast on the very first cold mount
+    if (prevCapsActiveRef.current === null) {
+      prevCapsActiveRef.current = isCapsLockActive;
+      return;
+    }
+
+    if (prevCapsActiveRef.current !== isCapsLockActive) {
+      if (isCapsLockActive) {
+        setCapsToast("Bloq Mayús: ACTIVADO ⚠️");
+      } else {
+        // If it was auto-unlocked (timeLeft === 0), show a special Auto-desactivado toast
+        if (autoUnlockCapsLock && timeLeft === 0) {
+          setCapsToast("Bloq Mayús: AUTO-DESACTIVADO 💡");
+        } else {
+          setCapsToast("Bloq Mayús: DESACTIVADO ✅");
+        }
+      }
+
+      if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+      toastTimeoutRef.current = setTimeout(() => {
+        setCapsToast(null);
+      }, 2000);
+
+      prevCapsActiveRef.current = isCapsLockActive;
+    }
+  }, [isCapsLockActive, autoUnlockCapsLock, timeLeft]);
+
+  // 4. Isolated cleanup for toast timeout on component unmount
   useEffect(() => {
     return () => {
       if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
     };
   }, []);
 
-  // Countdown timer loop effect
+  // 5. Countdown timer loop effect
   useEffect(() => {
     if (!autoUnlockCapsLock || !isCapsLockActive || timeLeft <= 0) return;
 
@@ -165,15 +213,15 @@ export default function NoteEditor({
     return () => clearTimeout(timer);
   }, [autoUnlockCapsLock, isCapsLockActive, timeLeft]);
 
-  // Unlock Caps Lock trigger effect when countdown hits 0
+  // 6. Unlock Caps Lock trigger effect when countdown hits 0 (Unconditional visual reset!)
   useEffect(() => {
     if (autoUnlockCapsLock && isCapsLockActive && timeLeft === 0) {
       const triggerUnlock = async () => {
+        // Unconditionally clear visual indicators immediately!
+        setIsCapsLockActive(false);
+
         if (window.cyberNotesAPI && window.cyberNotesAPI.unlockCapsLock) {
-          const success = await window.cyberNotesAPI.unlockCapsLock();
-          if (success) {
-            setIsCapsLockActive(false);
-          }
+          await window.cyberNotesAPI.unlockCapsLock();
         }
       };
       triggerUnlock();

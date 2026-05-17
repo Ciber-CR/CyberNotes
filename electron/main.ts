@@ -347,24 +347,28 @@ ipcMain.handle('add-to-dictionary', (_e: any, word: string) => {
 ipcMain.handle('unlock-caps-lock', async () => {
   if (process.platform !== 'win32') return false;
   return new Promise((resolve) => {
-    const psScript = `
-      Add-Type -AssemblyName System.Windows.Forms
-      if ([System.Windows.Forms.Control]::IsKeyLocked('CapsLock')) {
-        $wsh = New-Object -ComObject WScript.Shell
-        $wsh.SendKeys('{CAPSLOCK}')
-        echo "unlocked"
-      } else {
-        echo "already-off"
-      }
-    `.trim().replace(/\\s+/g, ' ');
-
+    const psScript = "Add-Type -AssemblyName System.Windows.Forms; if ([System.Windows.Forms.Control]::IsKeyLocked('CapsLock')) { (New-Object -ComObject WScript.Shell).SendKeys('{CAPSLOCK}'); Write-Host 'unlocked' } else { Write-Host 'already-off' }";
     exec(`powershell -Command "${psScript}"`, (err, stdout) => {
       if (err) {
         console.error('Failed to unlock caps lock:', err);
         resolve(false);
       } else {
         const out = stdout.trim();
-        resolve(out === 'unlocked');
+        resolve(out === 'unlocked' || out === 'already-off');
+      }
+    });
+  });
+});
+
+ipcMain.handle('check-caps-lock', async () => {
+  if (process.platform !== 'win32') return false;
+  return new Promise((resolve) => {
+    const psScript = "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Control]::IsKeyLocked('CapsLock')";
+    exec(`powershell -Command "${psScript}"`, (err, stdout) => {
+      if (err) {
+        resolve(false);
+      } else {
+        resolve(stdout.trim().toLowerCase() === 'true');
       }
     });
   });
