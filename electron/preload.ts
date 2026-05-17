@@ -23,6 +23,11 @@ contextBridge.exposeInMainWorld('cyberNotesAPI', {
     ipcRenderer.on('status-bar-url', listener);
     return () => ipcRenderer.removeListener('status-bar-url', listener);
   },
+  onSettingChanged: (callback: (data: { key: string, value: string }) => void) => {
+    const listener = (_e: any, data: any) => callback(data);
+    ipcRenderer.on('setting-changed', listener);
+    return () => ipcRenderer.removeListener('setting-changed', listener);
+  },
 
   // -- Auth --
   hasPassword: () => ipcRenderer.invoke('auth:hasPassword'),

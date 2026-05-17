@@ -43,6 +43,7 @@ export default function MainApp({ currentTheme, onThemeChange, colorIntensity, o
   const [showLineCounter, setShowLineCounter] = useState(false);
   const [autosaveEnabled, setAutosaveEnabled] = useState(true);
   const [autoUnlockCapsLock, setAutoUnlockCapsLock] = useState(false);
+  const [autoUnlockCapsLockTimeout, setAutoUnlockCapsLockTimeout] = useState(8);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
@@ -71,6 +72,12 @@ export default function MainApp({ currentTheme, onThemeChange, colorIntensity, o
       });
     });
 
+    const unregisterSettingChanged = window.cyberNotesAPI.onSettingChanged((data) => {
+      if (data.key === 'auto_unlock_caps_lock') {
+        setAutoUnlockCapsLock(data.value === 'true');
+      }
+    });
+
     const closeMenu = () => setContextMenu(null);
     window.addEventListener('click', closeMenu);
 
@@ -79,6 +86,7 @@ export default function MainApp({ currentTheme, onThemeChange, colorIntensity, o
       window.removeEventListener('contextmenu', trackMouse, true);
       window.removeEventListener('click', closeMenu);
       if (unregisterContext) unregisterContext();
+      if (unregisterSettingChanged) unregisterSettingChanged();
     };
   }, []);
 
@@ -165,6 +173,9 @@ export default function MainApp({ currentTheme, onThemeChange, colorIntensity, o
 
     const capsLock = await window.cyberNotesAPI.getSetting('auto_unlock_caps_lock');
     setAutoUnlockCapsLock(capsLock === 'true');
+
+    const capsLockTimeout = await window.cyberNotesAPI.getSetting('auto_unlock_caps_lock_timeout');
+    if (capsLockTimeout) setAutoUnlockCapsLockTimeout(parseInt(capsLockTimeout));
 
     if (isRemember) {
       const lastId = await window.cyberNotesAPI.getSetting('last_note_id');
@@ -354,6 +365,11 @@ export default function MainApp({ currentTheme, onThemeChange, colorIntensity, o
     await window.cyberNotesAPI.setSetting('auto_unlock_caps_lock', val.toString());
   };
 
+  const handleAutoUnlockCapsLockTimeoutChange = async (val: number) => {
+    setAutoUnlockCapsLockTimeout(val);
+    await window.cyberNotesAPI.setSetting('auto_unlock_caps_lock_timeout', val.toString());
+  };
+
   const selectedNote = notes.find(n => n.id === selectedNoteId) ?? null;
 
   const startDragSidebar = (e: React.MouseEvent) => {
@@ -486,6 +502,8 @@ export default function MainApp({ currentTheme, onThemeChange, colorIntensity, o
           showLineCounter={showLineCounter}
           autosaveEnabled={autosaveEnabled}
           autoUnlockCapsLock={autoUnlockCapsLock}
+          onAutoUnlockCapsLockChange={handleAutoUnlockCapsLockChange}
+          autoUnlockCapsLockTimeout={autoUnlockCapsLockTimeout}
           uiScale={uiScale}
           onScaleChange={handleScaleChange}
         />
@@ -513,6 +531,8 @@ export default function MainApp({ currentTheme, onThemeChange, colorIntensity, o
           onAutosaveEnabledChange={handleAutosaveEnabledChange}
           autoUnlockCapsLock={autoUnlockCapsLock}
           onAutoUnlockCapsLockChange={handleAutoUnlockCapsLockChange}
+          autoUnlockCapsLockTimeout={autoUnlockCapsLockTimeout}
+          onAutoUnlockCapsLockTimeoutChange={handleAutoUnlockCapsLockTimeoutChange}
           onClose={() => setShowSettings(false)}
           onLock={onLock}
         />

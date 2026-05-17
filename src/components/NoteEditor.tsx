@@ -13,7 +13,7 @@ import {
   Bold, Italic, Underline as UnderlineIcon, Strikethrough,
   Heading1, Heading2, List, ListOrdered, Link as LinkIcon,
   Image as ImageIcon, Highlighter, Quote, Minus, Code,
-  Plus, Pin, AlignLeft, AlignCenter, AlignRight, Braces, PanelLeft,
+  Plus, Pin, Keyboard, AlignLeft, AlignCenter, AlignRight, Braces, PanelLeft,
   Undo, Redo, Save, Download
 } from 'lucide-react';
 
@@ -26,6 +26,8 @@ interface Props {
   showLineCounter?: boolean;
   autosaveEnabled?: boolean;
   autoUnlockCapsLock?: boolean;
+  autoUnlockCapsLockTimeout?: number;
+  onAutoUnlockCapsLockChange?: (v: boolean) => void;
   uiScale?: number;
   onScaleChange?: (scale: number) => void;
 }
@@ -97,6 +99,8 @@ export default function NoteEditor({
   showLineCounter, 
   autosaveEnabled = true,
   autoUnlockCapsLock = false,
+  autoUnlockCapsLockTimeout = 8,
+  onAutoUnlockCapsLockChange,
   uiScale = 1.0,
   onScaleChange
 }: Props) {
@@ -136,7 +140,7 @@ export default function NoteEditor({
                 setIsCapsLockActive(false);
               }
             }
-          }, 8000); // 8 seconds of absolute keyboard inactivity
+          }, autoUnlockCapsLockTimeout * 1000); // Dynamic inactivity timeout
         }
       }
     };
@@ -149,7 +153,7 @@ export default function NoteEditor({
       window.removeEventListener('keyup', handleKeyboardActivity, true);
       if (capsLockTimerRef.current) clearTimeout(capsLockTimerRef.current);
     };
-  }, [autoUnlockCapsLock]);
+  }, [autoUnlockCapsLock, autoUnlockCapsLockTimeout]);
 
   useEffect(() => {
     const closeMenu = () => {
@@ -655,6 +659,68 @@ export default function NoteEditor({
               boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
               marginTop: 4,
             }}>
+              {/* Custom Keyboard/CapsLock Auto-Unlocker Toggle Button */}
+              <style>{`
+                @keyframes cyber-warning-pulse {
+                  0% { border-color: rgba(239, 68, 68, 0.3); box-shadow: 0 0 4px rgba(239, 68, 68, 0.1); }
+                  50% { border-color: rgba(239, 68, 68, 0.8); box-shadow: 0 0 10px rgba(239, 68, 68, 0.35); }
+                  100% { border-color: rgba(239, 68, 68, 0.3); box-shadow: 0 0 4px rgba(239, 68, 68, 0.1); }
+                }
+                @keyframes dot-pulse {
+                  0% { transform: scale(0.85); opacity: 0.5; }
+                  50% { transform: scale(1.15); opacity: 1; }
+                  100% { transform: scale(0.85); opacity: 0.5; }
+                }
+              `}</style>
+              <button 
+                onClick={() => onAutoUnlockCapsLockChange?.(!autoUnlockCapsLock)}
+                title={isCapsLockActive 
+                  ? `Bloq Mayús ACTIVO (Auto-desactivar: ${autoUnlockCapsLock ? 'ENCENDIDO' : 'APAGADO'})`
+                  : `Desactivar Bloq Mayús por inactividad (Estado: ${autoUnlockCapsLock ? 'ACTIVO' : 'INACTIVO'})`
+                }
+                style={{ 
+                  padding: 6,
+                  position: 'relative',
+                  color: isCapsLockActive 
+                    ? '#ef4444' 
+                    : autoUnlockCapsLock 
+                      ? 'var(--accent-light)' 
+                      : 'var(--text-muted)',
+                  background: autoUnlockCapsLock ? 'var(--accent-dim)' : 'transparent',
+                  border: '1px solid transparent',
+                  borderRadius: 'var(--radius-sm)',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  transition: 'all 0.2s',
+                  animation: isCapsLockActive ? 'cyber-warning-pulse 1.5s infinite ease-in-out' : 'none',
+                }}
+                onMouseEnter={e => { 
+                  if (!autoUnlockCapsLock && !isCapsLockActive) e.currentTarget.style.color = 'var(--text-primary)'; 
+                }}
+                onMouseLeave={e => { 
+                  if (!autoUnlockCapsLock && !isCapsLockActive) e.currentTarget.style.color = 'var(--text-muted)'; 
+                }}
+              >
+                <Keyboard size={14} />
+                
+                {/* Pulsing Red Dot for physical CapsLock active state */}
+                {isCapsLockActive && (
+                  <span style={{
+                    position: 'absolute',
+                    top: 2,
+                    right: 2,
+                    width: 5,
+                    height: 5,
+                    background: '#ef4444',
+                    borderRadius: '50%',
+                    boxShadow: '0 0 6px #ef4444',
+                    animation: 'dot-pulse 1.5s infinite ease-in-out',
+                  }} />
+                )}
+              </button>
+
               {/* Pin */}
               <button 
                 onClick={handlePin}
@@ -1018,34 +1084,6 @@ export default function NoteEditor({
 
         {/* Editor Line/Col stats & Text Metrics */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 14, opacity: 0.85 }}>
-          <AnimatePresence>
-            {isCapsLockActive && (
-              <motion.div
-                initial={{ opacity: 0, scale: 0.8 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.8 }}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 4,
-                  background: 'rgba(239, 68, 68, 0.15)',
-                  border: '1px solid rgba(239, 68, 68, 0.4)',
-                  color: '#ef4444',
-                  padding: '2px 8px',
-                  borderRadius: 'var(--radius-sm)',
-                  fontSize: 9,
-                  fontWeight: 'bold',
-                  letterSpacing: '0.05em',
-                  fontFamily: 'var(--font-mono)',
-                  marginRight: 6,
-                  boxShadow: '0 0 8px rgba(239, 68, 68, 0.25)',
-                }}
-              >
-                <span>⚠️ BLOQ MAYÚS</span>
-              </motion.div>
-            )}
-          </AnimatePresence>
-
           {showLineCounter && (
             <>
               <div style={{ display: 'flex', gap: 10 }}>

@@ -72,6 +72,7 @@ declare global {
       // Events
       onStatusBarUrl: (callback: (url: string) => void) => () => void;
       onContextMenuData: (callback: (data: any) => void) => () => void;
+      onSettingChanged: (callback: (data: { key: string, value: string }) => void) => () => void;
       // Spellcheck
       replaceMisspelling: (word: string) => Promise<void>;
       addToDictionary: (word: string) => Promise<void>;

@@ -1,33 +1,45 @@
-import { app as l, ipcMain as r, shell as N, session as D, dialog as m, BrowserWindow as b, Tray as P, Menu as k } from "electron";
-import d from "path";
-import u from "fs";
-import { fileURLToPath as U } from "url";
-import { createRequire as M } from "module";
-import { exec as j } from "child_process";
-const S = d.dirname(U(import.meta.url)), C = M(import.meta.url), y = !l.isPackaged;
-let g = d.join(S, "..", "public", "icon.png");
-y || (g = d.join(l.getAppPath(), "dist", "icon.png"));
-if (!u.existsSync(g)) {
-  const s = d.join(y ? d.join(S, "..", "public") : d.join(l.getAppPath(), "dist"), "icon.ico");
-  u.existsSync(s) && (g = s);
+import { app, ipcMain, shell, session, dialog, BrowserWindow, Tray, Menu } from "electron";
+import path from "path";
+import fs from "fs";
+import { fileURLToPath } from "url";
+import { createRequire } from "module";
+import { exec } from "child_process";
+const __dirname$1 = path.dirname(fileURLToPath(import.meta.url));
+const require$1 = createRequire(import.meta.url);
+const isDev = !app.isPackaged;
+let iconPath = path.join(__dirname$1, "..", "public", "icon.png");
+if (!isDev) {
+  iconPath = path.join(app.getAppPath(), "dist", "icon.png");
 }
-const F = C("bcryptjs"), A = l.getPath("userData"), T = d.join(A, "cybernotes.db"), w = d.join(A, "images"), { v4: H } = C("uuid");
-let h = null, L = null;
-function x() {
-  if (!h) return;
-  const s = h.export();
-  u.writeFileSync(T, Buffer.from(s));
+if (!fs.existsSync(iconPath)) {
+  const fallbackIcon = path.join(isDev ? path.join(__dirname$1, "..", "public") : path.join(app.getAppPath(), "dist"), "icon.ico");
+  if (fs.existsSync(fallbackIcon)) iconPath = fallbackIcon;
 }
-async function B() {
-  const s = y ? d.join(S, "..", "node_modules", "sql.js", "dist", "sql-wasm.wasm") : d.join(process.resourcesPath, "sql-wasm.wasm");
-  if (L = await C("sql.js")({
-    locateFile: () => s
-  }), u.existsSync(T)) {
-    const n = u.readFileSync(T);
-    h = new L.Database(n);
-  } else
-    h = new L.Database();
-  h.run(`
+const bcrypt = require$1("bcryptjs");
+const userDataPath = app.getPath("userData");
+const dbPath = path.join(userDataPath, "cybernotes.db");
+const imagesPath = path.join(userDataPath, "images");
+const { v4: uuidv4 } = require$1("uuid");
+let db = null;
+let SQL = null;
+function saveDbToDisk() {
+  if (!db) return;
+  const data = db.export();
+  fs.writeFileSync(dbPath, Buffer.from(data));
+}
+async function initDatabase() {
+  const sqlWasmPath = isDev ? path.join(__dirname$1, "..", "node_modules", "sql.js", "dist", "sql-wasm.wasm") : path.join(process.resourcesPath, "sql-wasm.wasm");
+  const initSqlJs = require$1("sql.js");
+  SQL = await initSqlJs({
+    locateFile: () => sqlWasmPath
+  });
+  if (fs.existsSync(dbPath)) {
+    const fileBuffer = fs.readFileSync(dbPath);
+    db = new SQL.Database(fileBuffer);
+  } else {
+    db = new SQL.Database();
+  }
+  db.run(`
     CREATE TABLE IF NOT EXISTS settings (
       key   TEXT PRIMARY KEY,
       value TEXT NOT NULL
@@ -52,130 +64,222 @@ async function B() {
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
-  `), x(), u.existsSync(w) || u.mkdirSync(w, { recursive: !0 });
-}
-function f(s, e = []) {
-  if (!h) throw new Error("Base de datos no inicializada");
-  const n = h.prepare(s);
-  n.bind(e);
-  const o = [];
-  for (; n.step(); )
-    o.push(n.getAsObject());
-  return n.free(), o;
-}
-function p(s, e = []) {
-  const n = f(s, e);
-  return n.length > 0 ? n[0] : null;
-}
-function a(s, e = []) {
-  if (!h) throw new Error("Base de datos no inicializada");
-  h.run(s, e), x();
-}
-let t = null, E = null, O = !1, _ = !1;
-function R() {
-  if (!t) return;
-  const s = p("SELECT value FROM settings WHERE key = ?", ["is_maximized"]);
-  (s == null ? void 0 : s.value) === "true" && t.maximize(), t.show(), t.focus();
-}
-function q() {
-  try {
-    E = new P(g);
-    const s = k.buildFromTemplate([
-      { label: "Abrir CyberNotes", click: R },
-      { type: "separator" },
-      {
-        label: "Salir",
-        click: () => {
-          O = !0, l.quit();
-        }
-      }
-    ]);
-    E.setToolTip("CyberNotes"), E.setContextMenu(s), E.on("click", () => {
-      t != null && t.isVisible() ? t.hide() : R();
-    });
-  } catch (s) {
-    console.error("Failed to create tray:", s);
+  `);
+  saveDbToDisk();
+  if (!fs.existsSync(imagesPath)) {
+    fs.mkdirSync(imagesPath, { recursive: true });
   }
 }
-function v() {
-  const s = p("SELECT value FROM settings WHERE key = ?", ["window_bounds"]), e = p("SELECT value FROM settings WHERE key = ?", ["is_maximized"]);
-  let n = { width: 1100, height: 700, x: void 0, y: void 0 };
-  if (s)
-    try {
-      const i = JSON.parse(s.value);
-      i.width > 400 && i.height > 400 && (n = i);
-    } catch {
+function queryAll(sql, params = []) {
+  if (!db) throw new Error("Base de datos no inicializada");
+  const stmt = db.prepare(sql);
+  stmt.bind(params);
+  const rows = [];
+  while (stmt.step()) {
+    rows.push(stmt.getAsObject());
+  }
+  stmt.free();
+  return rows;
+}
+function queryGet(sql, params = []) {
+  const rows = queryAll(sql, params);
+  return rows.length > 0 ? rows[0] : null;
+}
+function runQuery(sql, params = []) {
+  if (!db) throw new Error("Base de datos no inicializada");
+  db.run(sql, params);
+  saveDbToDisk();
+}
+let mainWindow = null;
+let tray = null;
+let isQuitting = false;
+let hasUnsavedChanges = false;
+function restoreWindow() {
+  if (!mainWindow) return;
+  const maxVal = queryGet("SELECT value FROM settings WHERE key = ?", ["is_maximized"]);
+  if ((maxVal == null ? void 0 : maxVal.value) === "true") mainWindow.maximize();
+  mainWindow.show();
+  mainWindow.focus();
+}
+function getTrayMenuTemplate() {
+  const capsLockVal = queryGet("SELECT value FROM settings WHERE key = ?", ["auto_unlock_caps_lock"]);
+  const isCapsUnlockEnabled = (capsLockVal == null ? void 0 : capsLockVal.value) === "true";
+  return [
+    { label: "Abrir CyberNotes", click: restoreWindow },
+    { type: "separator" },
+    {
+      label: "Desactivar CapsLock por inactividad",
+      type: "checkbox",
+      checked: isCapsUnlockEnabled,
+      click: (menuItem) => {
+        const newVal = menuItem.checked;
+        runQuery("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", ["auto_unlock_caps_lock", newVal ? "true" : "false"]);
+        updateTrayMenu();
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send("setting-changed", { key: "auto_unlock_caps_lock", value: newVal ? "true" : "false" });
+        }
+      }
+    },
+    { type: "separator" },
+    {
+      label: "Salir",
+      click: () => {
+        isQuitting = true;
+        app.quit();
+      }
     }
-  t = new b({
-    width: n.width,
-    height: n.height,
-    x: n.x,
-    y: n.y,
-    center: !n.x,
+  ];
+}
+function updateTrayMenu() {
+  if (!tray || tray.isDestroyed()) return;
+  try {
+    const contextMenu = Menu.buildFromTemplate(getTrayMenuTemplate());
+    tray.setContextMenu(contextMenu);
+  } catch (err) {
+    console.error("Failed to update tray menu:", err);
+  }
+}
+function createTray() {
+  try {
+    tray = new Tray(iconPath);
+    updateTrayMenu();
+    tray.setToolTip("CyberNotes");
+    tray.on("click", () => {
+      if (mainWindow == null ? void 0 : mainWindow.isVisible()) {
+        mainWindow.hide();
+      } else {
+        restoreWindow();
+      }
+    });
+  } catch (err) {
+    console.error("Failed to create tray:", err);
+  }
+}
+function createWindow() {
+  const boundsJson = queryGet("SELECT value FROM settings WHERE key = ?", ["window_bounds"]);
+  const isMaximizedVal = queryGet("SELECT value FROM settings WHERE key = ?", ["is_maximized"]);
+  let bounds = { width: 1100, height: 700, x: void 0, y: void 0 };
+  if (boundsJson) {
+    try {
+      const savedBounds = JSON.parse(boundsJson.value);
+      if (savedBounds.width > 400 && savedBounds.height > 400) {
+        bounds = savedBounds;
+      }
+    } catch (e) {
+    }
+  }
+  mainWindow = new BrowserWindow({
+    width: bounds.width,
+    height: bounds.height,
+    x: bounds.x,
+    y: bounds.y,
+    center: !bounds.x,
     minWidth: 900,
     minHeight: 600,
-    frame: !1,
+    frame: false,
     titleBarStyle: "hidden",
     backgroundColor: "#0d0d14",
-    icon: g,
+    icon: iconPath,
     webPreferences: {
-      preload: d.join(S, "preload.mjs"),
-      contextIsolation: !0,
-      nodeIntegration: !1,
-      webSecurity: !1
+      preload: path.join(__dirname$1, "preload.mjs"),
+      contextIsolation: true,
+      nodeIntegration: false,
+      webSecurity: false
     },
-    show: !1
+    show: false
   });
-  const o = () => {
-    if (!t || t.isDestroyed()) return;
-    const i = t.isMaximized();
-    a("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", ["is_maximized", i ? "true" : "false"]);
-    const c = t.getBounds();
-    c.width > 100 && c.height > 100 && a("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", ["window_bounds", JSON.stringify(c)]);
+  const saveWindowState = () => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    const isMax = mainWindow.isMaximized();
+    runQuery("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", ["is_maximized", isMax ? "true" : "false"]);
+    const b = mainWindow.getBounds();
+    if (b.width > 100 && b.height > 100) {
+      runQuery("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", ["window_bounds", JSON.stringify(b)]);
+    }
   };
-  t.on("resize", o), t.on("move", o), t.on("close", o), t.on("maximize", o), t.on("unmaximize", o), t.on("hide", o), t.on("close", (i) => {
-    const c = p("SELECT value FROM settings WHERE key = ?", ["close_to_tray"]);
-    if ((c == null ? void 0 : c.value) === "true" && !O)
-      return i.preventDefault(), t == null || t.hide(), !1;
-    if (_)
-      return i.preventDefault(), m.showMessageBox(t, {
+  mainWindow.on("resize", saveWindowState);
+  mainWindow.on("move", saveWindowState);
+  mainWindow.on("close", saveWindowState);
+  mainWindow.on("maximize", saveWindowState);
+  mainWindow.on("unmaximize", saveWindowState);
+  mainWindow.on("hide", saveWindowState);
+  mainWindow.on("close", (event) => {
+    const closeToTray = queryGet("SELECT value FROM settings WHERE key = ?", ["close_to_tray"]);
+    if ((closeToTray == null ? void 0 : closeToTray.value) === "true" && !isQuitting) {
+      event.preventDefault();
+      mainWindow == null ? void 0 : mainWindow.hide();
+      return false;
+    }
+    if (hasUnsavedChanges) {
+      event.preventDefault();
+      dialog.showMessageBox(mainWindow, {
         type: "question",
         buttons: ["Salir sin guardar", "Cancelar"],
         defaultId: 1,
         title: "Cambios sin guardar",
         message: "Tienes cambios sin guardar en la nota actual. ¿Salir sin guardar?"
-      }).then((I) => {
-        I.response === 0 && (_ = !1, O = !0, t == null || t.close());
-      }), !1;
-    E && !E.isDestroyed() && (E.destroy(), E = null);
-  }), t.webContents.setWindowOpenHandler(({ url: i }) => (i.startsWith("http") && N.openExternal(i), { action: "deny" })), t.webContents.on("context-menu", (i, c) => {
-    t == null || t.webContents.send("context-menu-data", {
-      x: c.x,
-      y: c.y,
-      suggestions: c.dictionarySuggestions,
-      misspelledWord: c.misspelledWord,
-      linkURL: c.linkURL
+      }).then((result) => {
+        if (result.response === 0) {
+          hasUnsavedChanges = false;
+          isQuitting = true;
+          mainWindow == null ? void 0 : mainWindow.close();
+        }
+      });
+      return false;
+    }
+    if (tray && !tray.isDestroyed()) {
+      tray.destroy();
+      tray = null;
+    }
+  });
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith("http")) {
+      shell.openExternal(url);
+    }
+    return { action: "deny" };
+  });
+  mainWindow.webContents.on("context-menu", (event, params) => {
+    mainWindow == null ? void 0 : mainWindow.webContents.send("context-menu-data", {
+      x: params.x,
+      y: params.y,
+      suggestions: params.dictionarySuggestions,
+      misspelledWord: params.misspelledWord,
+      linkURL: params.linkURL
     });
-  }), y ? t.loadURL("http://localhost:5173") : t.loadFile(d.join(S, "../dist/index.html")), t.once("ready-to-show", () => {
-    process.argv.includes("--hidden") || ((e == null ? void 0 : e.value) === "true" && (t == null || t.maximize()), t.show(), t.focus());
+  });
+  if (isDev) {
+    mainWindow.loadURL("http://localhost:5173");
+  } else {
+    mainWindow.loadFile(path.join(__dirname$1, "../dist/index.html"));
+  }
+  mainWindow.once("ready-to-show", () => {
+    if (process.argv.includes("--hidden")) return;
+    if ((isMaximizedVal == null ? void 0 : isMaximizedVal.value) === "true") {
+      mainWindow == null ? void 0 : mainWindow.maximize();
+    }
+    mainWindow.show();
+    mainWindow.focus();
   });
 }
-r.handle("window-minimize", () => t == null ? void 0 : t.minimize());
-r.handle("window-maximize-toggle", () => {
-  t != null && t.isMaximized() ? t.unmaximize() : t == null || t.maximize();
+ipcMain.handle("window-minimize", () => mainWindow == null ? void 0 : mainWindow.minimize());
+ipcMain.handle("window-maximize-toggle", () => {
+  if (mainWindow == null ? void 0 : mainWindow.isMaximized()) mainWindow.unmaximize();
+  else mainWindow == null ? void 0 : mainWindow.maximize();
 });
-r.handle("window-close", () => t == null ? void 0 : t.close());
-r.handle("window:unsavedChanges:set", (s, e) => {
-  _ = e;
+ipcMain.handle("window-close", () => mainWindow == null ? void 0 : mainWindow.close());
+ipcMain.handle("window:unsavedChanges:set", (_e, val) => {
+  hasUnsavedChanges = val;
 });
-r.handle("open-dev-tools", () => t == null ? void 0 : t.webContents.openDevTools({ mode: "detach" }));
-r.handle("open-data-folder", () => N.openPath(A));
-r.handle("replace-misspelling", (s, e) => t == null ? void 0 : t.webContents.replaceMisspelling(e));
-r.handle("add-to-dictionary", (s, e) => {
-  D.defaultSession.addWordToSpellCheckerDictionary(e);
+ipcMain.handle("open-dev-tools", () => mainWindow == null ? void 0 : mainWindow.webContents.openDevTools({ mode: "detach" }));
+ipcMain.handle("open-data-folder", () => shell.openPath(userDataPath));
+ipcMain.handle("replace-misspelling", (_e, word) => mainWindow == null ? void 0 : mainWindow.webContents.replaceMisspelling(word));
+ipcMain.handle("add-to-dictionary", (_e, word) => {
+  session.defaultSession.addWordToSpellCheckerDictionary(word);
 });
-r.handle("unlock-caps-lock", async () => process.platform !== "win32" ? !1 : new Promise((s) => {
-  const e = `
+ipcMain.handle("unlock-caps-lock", async () => {
+  if (process.platform !== "win32") return false;
+  return new Promise((resolve) => {
+    const psScript = `
       Add-Type -AssemblyName System.Windows.Forms
       if ([System.Windows.Forms.Control]::IsKeyLocked('CapsLock')) {
         $wsh = New-Object -ComObject WScript.Shell
@@ -185,119 +289,195 @@ r.handle("unlock-caps-lock", async () => process.platform !== "win32" ? !1 : new
         echo "already-off"
       }
     `.trim().replace(/\\s+/g, " ");
-  j(`powershell -Command "${e}"`, (n, o) => {
-    if (n)
-      console.error("Failed to unlock caps lock:", n), s(!1);
-    else {
-      const i = o.trim();
-      s(i === "unlocked");
-    }
+    exec(`powershell -Command "${psScript}"`, (err, stdout) => {
+      if (err) {
+        console.error("Failed to unlock caps lock:", err);
+        resolve(false);
+      } else {
+        const out = stdout.trim();
+        resolve(out === "unlocked");
+      }
+    });
   });
-}));
-r.handle("auth:hasPassword", () => !!p("SELECT value FROM settings WHERE key = ?", ["password_hash"]));
-r.handle("auth:setPassword", async (s, e) => {
-  const n = await F.hash(e, 10);
-  return a("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", ["password_hash", n]), !0;
 });
-r.handle("auth:verifyPassword", async (s, e) => {
-  const n = p("SELECT value FROM settings WHERE key = ?", ["password_hash"]);
-  return n ? F.compare(e, n.value) : !0;
+ipcMain.handle("auth:hasPassword", () => {
+  const row = queryGet("SELECT value FROM settings WHERE key = ?", ["password_hash"]);
+  return !!row;
 });
-r.handle("auth:removePassword", () => (a("DELETE FROM settings WHERE key = ?", ["password_hash"]), !0));
-r.handle("settings:get", (s, e) => {
-  const n = p("SELECT value FROM settings WHERE key = ?", [e]);
-  return n ? n.value : null;
+ipcMain.handle("auth:setPassword", async (_e, password) => {
+  const hash = await bcrypt.hash(password, 10);
+  runQuery("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", ["password_hash", hash]);
+  return true;
 });
-r.handle("settings:set", (s, e, n) => (a("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", [e, n]), !0));
-r.handle("settings:setAutoStart", (s, e) => (l.setLoginItemSettings({
-  openAtLogin: e,
-  openAsHidden: !0,
-  // macOS
-  args: e ? ["--hidden"] : []
-  // Windows / Linux
-}), a("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", ["auto_start", e ? "true" : "false"]), !0));
-r.handle("settings:getAutoStart", () => l.getLoginItemSettings().openAtLogin);
-r.handle("folders:getAll", () => f("SELECT * FROM folders ORDER BY name COLLATE NOCASE ASC"));
-r.handle("folders:create", (s, e) => (a(
-  "INSERT INTO folders (id, name, icon, color, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-  [e.id, e.name, e.icon, e.color, e.sort_order, e.created_at]
-), e));
-r.handle("folders:update", (s, e) => (a(
-  "UPDATE folders SET name = ?, icon = ?, color = ?, sort_order = ? WHERE id = ?",
-  [e.name, e.icon, e.color, e.sort_order, e.id]
-), !0));
-r.handle("folders:delete", (s, e) => (a("DELETE FROM notes WHERE folder_id = ?", [e]), a("DELETE FROM folders WHERE id = ?", [e]), !0));
-r.handle("notes:getAll", () => f("SELECT * FROM notes ORDER BY pinned DESC, updated_at DESC"));
-r.handle("notes:getByFolder", (s, e) => e ? f("SELECT * FROM notes WHERE folder_id = ? ORDER BY pinned DESC, updated_at DESC", [e]) : f("SELECT * FROM notes ORDER BY pinned DESC, updated_at DESC"));
-r.handle("notes:save", (s, e) => (p("SELECT id FROM notes WHERE id = ?", [e.id]) ? a(
-  "UPDATE notes SET folder_id = ?, title = ?, content = ?, preview = ?, pinned = ?, updated_at = ? WHERE id = ?",
-  [e.folder_id, e.title, e.content, e.preview, e.pinned, e.updated_at, e.id]
-) : a(
-  "INSERT INTO notes (id, folder_id, title, content, preview, pinned, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-  [e.id, e.folder_id, e.title, e.content, e.preview, e.pinned, e.created_at, e.updated_at]
-), e));
-r.handle("notes:delete", (s, e) => (a("DELETE FROM notes WHERE id = ?", [e]), !0));
-r.handle("notes:search", (s, e) => {
-  const n = `%${e}%`;
-  return f(
+ipcMain.handle("auth:verifyPassword", async (_e, password) => {
+  const row = queryGet("SELECT value FROM settings WHERE key = ?", ["password_hash"]);
+  if (!row) return true;
+  return bcrypt.compare(password, row.value);
+});
+ipcMain.handle("auth:removePassword", () => {
+  runQuery("DELETE FROM settings WHERE key = ?", ["password_hash"]);
+  return true;
+});
+ipcMain.handle("settings:get", (_e, key) => {
+  const row = queryGet("SELECT value FROM settings WHERE key = ?", [key]);
+  return row ? row.value : null;
+});
+ipcMain.handle("settings:set", (_e, key, value) => {
+  runQuery("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", [key, value]);
+  if (key === "auto_unlock_caps_lock") {
+    updateTrayMenu();
+  }
+  return true;
+});
+ipcMain.handle("settings:setAutoStart", (_e, enable) => {
+  app.setLoginItemSettings({
+    openAtLogin: enable,
+    openAsHidden: true,
+    // macOS
+    args: enable ? ["--hidden"] : []
+    // Windows / Linux
+  });
+  runQuery("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", ["auto_start", enable ? "true" : "false"]);
+  return true;
+});
+ipcMain.handle("settings:getAutoStart", () => {
+  const settings = app.getLoginItemSettings();
+  return settings.openAtLogin;
+});
+ipcMain.handle("folders:getAll", () => {
+  return queryAll("SELECT * FROM folders ORDER BY name COLLATE NOCASE ASC");
+});
+ipcMain.handle("folders:create", (_e, folder) => {
+  runQuery(
+    "INSERT INTO folders (id, name, icon, color, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+    [folder.id, folder.name, folder.icon, folder.color, folder.sort_order, folder.created_at]
+  );
+  return folder;
+});
+ipcMain.handle("folders:update", (_e, folder) => {
+  runQuery(
+    "UPDATE folders SET name = ?, icon = ?, color = ?, sort_order = ? WHERE id = ?",
+    [folder.name, folder.icon, folder.color, folder.sort_order, folder.id]
+  );
+  return true;
+});
+ipcMain.handle("folders:delete", (_e, id) => {
+  runQuery("DELETE FROM notes WHERE folder_id = ?", [id]);
+  runQuery("DELETE FROM folders WHERE id = ?", [id]);
+  return true;
+});
+ipcMain.handle("notes:getAll", () => {
+  return queryAll("SELECT * FROM notes ORDER BY pinned DESC, updated_at DESC");
+});
+ipcMain.handle("notes:getByFolder", (_e, folderId) => {
+  if (!folderId) {
+    return queryAll("SELECT * FROM notes ORDER BY pinned DESC, updated_at DESC");
+  }
+  return queryAll("SELECT * FROM notes WHERE folder_id = ? ORDER BY pinned DESC, updated_at DESC", [folderId]);
+});
+ipcMain.handle("notes:save", (_e, note) => {
+  const exists = queryGet("SELECT id FROM notes WHERE id = ?", [note.id]);
+  if (exists) {
+    runQuery(
+      "UPDATE notes SET folder_id = ?, title = ?, content = ?, preview = ?, pinned = ?, updated_at = ? WHERE id = ?",
+      [note.folder_id, note.title, note.content, note.preview, note.pinned, note.updated_at, note.id]
+    );
+  } else {
+    runQuery(
+      "INSERT INTO notes (id, folder_id, title, content, preview, pinned, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      [note.id, note.folder_id, note.title, note.content, note.preview, note.pinned, note.created_at, note.updated_at]
+    );
+  }
+  return note;
+});
+ipcMain.handle("notes:delete", (_e, id) => {
+  runQuery("DELETE FROM notes WHERE id = ?", [id]);
+  return true;
+});
+ipcMain.handle("notes:search", (_e, query) => {
+  const q = `%${query}%`;
+  return queryAll(
     "SELECT * FROM notes WHERE title LIKE ? OR preview LIKE ? OR content LIKE ? ORDER BY pinned DESC, updated_at DESC",
-    [n, n, n]
+    [q, q, q]
   );
 });
-r.handle("images:selectAndSave", async () => {
-  const s = await m.showOpenDialog(t, {
+ipcMain.handle("images:selectAndSave", async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
     title: "Seleccionar imagen",
     filters: [{ name: "Imágenes", extensions: ["png", "jpg", "jpeg", "gif", "webp", "svg"] }],
     properties: ["openFile"]
   });
-  if (s.canceled || !s.filePaths.length) return null;
-  const e = s.filePaths[0], n = d.extname(e), o = `${H()}${n}`, i = d.join(w, o);
-  return u.copyFileSync(e, i), `file:///${i.replace(/\\/g, "/")}`;
+  if (result.canceled || !result.filePaths.length) return null;
+  const sourcePath = result.filePaths[0];
+  const ext = path.extname(sourcePath);
+  const filename = `${uuidv4()}${ext}`;
+  const destPath = path.join(imagesPath, filename);
+  fs.copyFileSync(sourcePath, destPath);
+  return `file:///${destPath.replace(/\\/g, "/")}`;
 });
-r.handle("data:export", async () => {
-  const s = await m.showSaveDialog(t, {
+ipcMain.handle("data:export", async () => {
+  const result = await dialog.showSaveDialog(mainWindow, {
     title: "Exportar datos de CyberNotes",
     defaultPath: "cybernotes-export.json",
     filters: [{ name: "JSON", extensions: ["json"] }]
   });
-  if (s.canceled || !s.filePath) return !1;
-  const e = f("SELECT * FROM folders"), n = f("SELECT * FROM notes"), o = { folders: e, notes: n, version: 1 };
-  return u.writeFileSync(s.filePath, JSON.stringify(o, null, 2)), !0;
+  if (result.canceled || !result.filePath) return false;
+  const folders = queryAll("SELECT * FROM folders");
+  const notes = queryAll("SELECT * FROM notes");
+  const exportData = { folders, notes, version: 1 };
+  fs.writeFileSync(result.filePath, JSON.stringify(exportData, null, 2));
+  return true;
 });
-r.handle("data:import", async () => {
-  const s = await m.showOpenDialog(t, {
+ipcMain.handle("data:import", async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
     title: "Importar datos a CyberNotes",
     filters: [{ name: "JSON", extensions: ["json"] }],
     properties: ["openFile"]
   });
-  if (s.canceled || !s.filePaths.length) return !1;
+  if (result.canceled || !result.filePaths.length) return false;
   try {
-    const e = JSON.parse(u.readFileSync(s.filePaths[0], "utf-8"));
-    if (!e.folders || !e.notes) return !1;
-    const n = T + ".backup-" + Date.now();
-    u.existsSync(T) && u.copyFileSync(T, n);
-    for (const o of e.folders)
-      a(
+    const data = JSON.parse(fs.readFileSync(result.filePaths[0], "utf-8"));
+    if (!data.folders || !data.notes) return false;
+    const backupPath = dbPath + ".backup-" + Date.now();
+    if (fs.existsSync(dbPath)) fs.copyFileSync(dbPath, backupPath);
+    for (const f of data.folders) {
+      runQuery(
         "INSERT OR REPLACE INTO folders (id, name, icon, color, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-        [o.id, o.name, o.icon, o.color, o.sort_order, o.created_at]
+        [f.id, f.name, f.icon, f.color, f.sort_order, f.created_at]
       );
-    for (const o of e.notes)
-      a(
+    }
+    for (const n of data.notes) {
+      runQuery(
         "INSERT OR REPLACE INTO notes (id, folder_id, title, content, preview, pinned, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        [o.id, o.folder_id, o.title, o.content, o.preview, o.pinned, o.created_at, o.updated_at]
+        [n.id, n.folder_id, n.title, n.content, n.preview, n.pinned, n.created_at, n.updated_at]
       );
-    return !0;
+    }
+    return true;
   } catch (e) {
-    return console.error("Import error:", e), !1;
+    console.error("Import error:", e);
+    return false;
   }
 });
-const X = l.requestSingleInstanceLock();
-X ? (l.on("second-instance", (s, e, n) => {
-  R();
-}), l.whenReady().then(async () => {
-  D.defaultSession.setSpellCheckerLanguages(["es-ES", "en-US"]), await B(), v(), q(), l.on("activate", () => {
-    b.getAllWindows().length === 0 ? v() : R();
+const gotTheLock = app.requestSingleInstanceLock();
+if (!gotTheLock) {
+  app.quit();
+} else {
+  app.on("second-instance", (event, commandLine, workingDirectory) => {
+    restoreWindow();
   });
-}), l.on("window-all-closed", () => {
-  process.platform !== "darwin" && (E || l.quit());
-})) : l.quit();
+  app.whenReady().then(async () => {
+    session.defaultSession.setSpellCheckerLanguages(["es-ES", "en-US"]);
+    await initDatabase();
+    createWindow();
+    createTray();
+    app.on("activate", () => {
+      if (BrowserWindow.getAllWindows().length === 0) createWindow();
+      else restoreWindow();
+    });
+  });
+  app.on("window-all-closed", () => {
+    if (process.platform !== "darwin") {
+      if (!tray) app.quit();
+    }
+  });
+}

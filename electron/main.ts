@@ -140,21 +140,50 @@ function restoreWindow() {
   mainWindow.focus();
 }
 
+function getTrayMenuTemplate(): any[] {
+  const capsLockVal = queryGet('SELECT value FROM settings WHERE key = ?', ['auto_unlock_caps_lock']);
+  const isCapsUnlockEnabled = capsLockVal?.value === 'true';
+
+  return [
+    { label: 'Abrir CyberNotes', click: restoreWindow },
+    { type: 'separator' },
+    { 
+      label: 'Desactivar CapsLock por inactividad', 
+      type: 'checkbox', 
+      checked: isCapsUnlockEnabled, 
+      click: (menuItem: any) => {
+        const newVal = menuItem.checked;
+        runQuery('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', ['auto_unlock_caps_lock', newVal ? 'true' : 'false']);
+        updateTrayMenu();
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('setting-changed', { key: 'auto_unlock_caps_lock', value: newVal ? 'true' : 'false' });
+        }
+      } 
+    },
+    { type: 'separator' },
+    { label: 'Salir', click: () => {
+        isQuitting = true;
+        app.quit();
+      } 
+    }
+  ];
+}
+
+function updateTrayMenu() {
+  if (!tray || tray.isDestroyed()) return;
+  try {
+    const contextMenu = Menu.buildFromTemplate(getTrayMenuTemplate());
+    tray.setContextMenu(contextMenu);
+  } catch (err) {
+    console.error('Failed to update tray menu:', err);
+  }
+}
+
 function createTray() {
   try {
     tray = new Tray(iconPath);
-    const contextMenu = Menu.buildFromTemplate([
-      { label: 'Abrir CyberNotes', click: restoreWindow },
-      { type: 'separator' },
-      { label: 'Salir', click: () => {
-          isQuitting = true;
-          app.quit();
-        } 
-      }
-    ]);
-    
+    updateTrayMenu();
     tray.setToolTip('CyberNotes');
-    tray.setContextMenu(contextMenu);
 
     tray.on('click', () => {
       if (mainWindow?.isVisible()) {
@@ -372,6 +401,9 @@ ipcMain.handle('settings:get', (_e: any, key: string) => {
 
 ipcMain.handle('settings:set', (_e: any, key: string, value: string) => {
   runQuery('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', [key, value]);
+  if (key === 'auto_unlock_caps_lock') {
+    updateTrayMenu();
+  }
   return true;
 });
 

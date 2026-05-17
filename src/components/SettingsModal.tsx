@@ -24,6 +24,8 @@ interface Props {
   onAutosaveEnabledChange: (v: boolean) => void;
   autoUnlockCapsLock: boolean;
   onAutoUnlockCapsLockChange: (v: boolean) => void;
+  autoUnlockCapsLockTimeout: number;
+  onAutoUnlockCapsLockTimeoutChange: (v: number) => void;
   onClose: () => void;
   onLock: () => void;
 }
@@ -38,6 +40,7 @@ export default function SettingsModal({
   showLineCounter, onShowLineCounterChange,
   autosaveEnabled, onAutosaveEnabledChange,
   autoUnlockCapsLock, onAutoUnlockCapsLockChange,
+  autoUnlockCapsLockTimeout, onAutoUnlockCapsLockTimeoutChange,
   onClose, onLock 
 }: Props) {
   const [tab, setTab] = useState<Tab>('general');
@@ -521,36 +524,86 @@ export default function SettingsModal({
                     />
                   </label>
 
-                  <label style={{ 
+                  <div style={{
                     display: 'flex', 
-                    alignItems: 'center', 
-                    justifyContent: 'space-between',
+                    flexDirection: 'column',
                     padding: '12px 16px',
                     background: 'var(--bg-surface)',
                     borderRadius: 'var(--radius-md)',
                     border: '1px solid var(--border)',
-                    cursor: 'pointer'
+                    gap: 12,
                   }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                      <span style={{ fontSize: 13, color: 'var(--text-primary)', fontWeight: 500 }}>Desactivar Bloq Mayús por inactividad</span>
-                      <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Desactiva físicamente el Bloq Mayús tras 8 segundos de inactividad de teclado en el editor</span>
-                    </div>
-                    <input 
-                      type="checkbox" 
-                      checked={autoUnlockCapsLock}
-                      onChange={(e) => onAutoUnlockCapsLockChange(e.target.checked)}
-                      style={{
-                        width: 40,
-                        height: 20,
-                        appearance: 'none',
-                        background: autoUnlockCapsLock ? 'var(--accent)' : 'var(--border)',
-                        borderRadius: 10,
-                        position: 'relative',
-                        cursor: 'pointer',
-                        transition: 'background 0.2s'
-                      }}
-                    />
-                  </label>
+                    <label style={{ 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      justifyContent: 'space-between',
+                      cursor: 'pointer',
+                      width: '100%',
+                    }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                        <span style={{ fontSize: 13, color: 'var(--text-primary)', fontWeight: 500 }}>Desactivar Bloq Mayús por inactividad</span>
+                        <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Desactiva físicamente el Bloq Mayús tras un periodo ajustable de inactividad de teclado en el editor</span>
+                      </div>
+                      <input 
+                        type="checkbox" 
+                        checked={autoUnlockCapsLock}
+                        onChange={(e) => onAutoUnlockCapsLockChange(e.target.checked)}
+                        style={{
+                          width: 40,
+                          height: 20,
+                          appearance: 'none',
+                          background: autoUnlockCapsLock ? 'var(--accent)' : 'var(--border)',
+                          borderRadius: 10,
+                          position: 'relative',
+                          cursor: 'pointer',
+                          transition: 'background 0.2s',
+                          flexShrink: 0,
+                        }}
+                      />
+                    </label>
+
+                    {autoUnlockCapsLock && (
+                      <div style={{
+                        marginTop: 4,
+                        padding: '10px 14px',
+                        background: 'var(--bg-notelist)',
+                        borderRadius: 'var(--radius-sm)',
+                        border: '1px solid var(--border)',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 8,
+                      }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Tiempo de inactividad</span>
+                          <span style={{ fontSize: 11, color: 'var(--accent-light)', fontWeight: 700 }}>
+                            {(() => {
+                              const CAPS_LOCK_STEPS = [5, 10, 15, 30, 45, 60, 120, 300, 600, 900, 1800, 3600, 7200, 10800, 21600];
+                              const CAPS_LOCK_LABELS = ['5s', '10s', '15s', '30s', '45s', '1m', '2m', '5m', '10m', '15m', '30m', '1h', '2h', '3h', '6h'];
+                              const idx = CAPS_LOCK_STEPS.indexOf(autoUnlockCapsLockTimeout);
+                              return idx !== -1 ? CAPS_LOCK_LABELS[idx] : '8s';
+                            })()}
+                          </span>
+                        </div>
+                        <input 
+                          type="range"
+                          min="0"
+                          max="14"
+                          step="1"
+                          value={(() => {
+                            const CAPS_LOCK_STEPS = [5, 10, 15, 30, 45, 60, 120, 300, 600, 900, 1800, 3600, 7200, 10800, 21600];
+                            const idx = CAPS_LOCK_STEPS.indexOf(autoUnlockCapsLockTimeout);
+                            return idx !== -1 ? idx : 1;
+                          })()}
+                          onChange={(e) => {
+                            const CAPS_LOCK_STEPS = [5, 10, 15, 30, 45, 60, 120, 300, 600, 900, 1800, 3600, 7200, 10800, 21600];
+                            const idx = parseInt(e.target.value);
+                            onAutoUnlockCapsLockTimeoutChange(CAPS_LOCK_STEPS[idx]);
+                          }}
+                          style={{ width: '100%', accentColor: 'var(--accent)', cursor: 'pointer' }}
+                        />
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
 
