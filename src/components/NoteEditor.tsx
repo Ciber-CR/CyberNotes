@@ -121,6 +121,8 @@ export default function NoteEditor({
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [isCapsLockActive, setIsCapsLockActive] = useState(false);
   const [timeLeft, setTimeLeft] = useState(0);
+  const [capsToast, setCapsToast] = useState<string | null>(null);
+  const toastTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     const handleKeyboardActivity = (e: KeyboardEvent) => {
@@ -142,6 +144,7 @@ export default function NoteEditor({
     return () => {
       window.removeEventListener('keydown', handleKeyboardActivity, true);
       window.removeEventListener('keyup', handleKeyboardActivity, true);
+      if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
     };
   }, [autoUnlockCapsLock, autoUnlockCapsLockTimeout]);
 
@@ -689,7 +692,20 @@ export default function NoteEditor({
                 }
               `}</style>
               <button 
-                onClick={() => onAutoUnlockCapsLockChange?.(!autoUnlockCapsLock)}
+                onClick={() => {
+                  const nextVal = !autoUnlockCapsLock;
+                  onAutoUnlockCapsLockChange?.(nextVal);
+                  
+                  // Trigger a beautiful floating toast alert
+                  setCapsToast(nextVal 
+                    ? "Bloq Mayús Auto-desactivar: ACTIVADO" 
+                    : "Bloq Mayús Auto-desactivar: DESACTIVADO"
+                  );
+                  if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+                  toastTimeoutRef.current = setTimeout(() => {
+                    setCapsToast(null);
+                  }, 2000);
+                }}
                 title={isCapsLockActive 
                   ? `Bloq Mayús ACTIVO (Auto-desactivar: ${autoUnlockCapsLock ? 'ENCENDIDO' : 'APAGADO'})`
                   : `Desactivar Bloq Mayús por inactividad (Estado: ${autoUnlockCapsLock ? 'ACTIVO' : 'INACTIVO'})`
@@ -703,14 +719,21 @@ export default function NoteEditor({
                       ? 'var(--accent-light)' 
                       : 'var(--text-muted)',
                   background: autoUnlockCapsLock ? 'var(--accent-dim)' : 'transparent',
-                  border: '1px solid transparent',
+                  border: (isCapsLockActive && autoUnlockCapsLock)
+                    ? '1px solid rgba(239, 68, 68, 0.4)' 
+                    : '1px solid transparent',
                   borderRadius: 'var(--radius-sm)',
                   cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                   transition: 'all 0.2s',
-                  animation: isCapsLockActive ? 'cyber-warning-pulse 1.5s infinite ease-in-out' : 'none',
+                  boxShadow: (isCapsLockActive && autoUnlockCapsLock)
+                    ? '0 0 8px rgba(239, 68, 68, 0.25)' 
+                    : 'none',
+                  animation: (isCapsLockActive && autoUnlockCapsLock) 
+                    ? 'cyber-warning-pulse 1.5s infinite ease-in-out' 
+                    : 'none',
                 }}
                 onMouseEnter={e => { 
                   if (!autoUnlockCapsLock && !isCapsLockActive) e.currentTarget.style.color = 'var(--text-primary)'; 
@@ -721,8 +744,8 @@ export default function NoteEditor({
               >
                 <Keyboard size={14} />
                 
-                {/* Pulsing Red Dot for physical CapsLock active state */}
-                {isCapsLockActive && (
+                {/* Pulsing Red Dot for physical CapsLock active state (Only active when feature is also enabled) */}
+                {isCapsLockActive && autoUnlockCapsLock && (
                   <span style={{
                     position: 'absolute',
                     top: 2,
@@ -1437,6 +1460,40 @@ export default function NoteEditor({
           </div>
         </div>
       )}
+
+      <AnimatePresence>
+        {capsToast && (
+          <motion.div
+            initial={{ opacity: 0, y: -20, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -20, scale: 0.95 }}
+            transition={{ type: 'spring', stiffness: 220, damping: 20 }}
+            style={{
+              position: 'absolute',
+              top: 75,
+              left: '50%',
+              x: '-50%',
+              zIndex: 9999,
+              background: 'var(--bg-modal)',
+              border: '1px solid var(--accent)',
+              color: 'var(--accent-light)',
+              padding: '8px 18px',
+              borderRadius: 'var(--radius-md)',
+              fontSize: 12,
+              fontWeight: 600,
+              boxShadow: '0 4px 20px var(--accent-glow)',
+              pointerEvents: 'none',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+            }}
+            className="glass-effect"
+          >
+            <span style={{ color: 'var(--accent)' }}>ℹ️</span>
+            <span>{capsToast}</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <style>{`
         .ProseMirror {
