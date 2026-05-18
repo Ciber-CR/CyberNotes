@@ -897,6 +897,43 @@ export default function NoteEditor({
               <Pin size={14} />
             </button>
 
+            {/* Guardar manual */}
+            <AnimatePresence>
+              {!autosaveEnabled && hasUnsavedChanges && (
+                <motion.button
+                  onClick={handleManualSave}
+                  title={language === 'es' ? "Guardar cambios pendientes" : "Save pending changes"}
+                  initial={{ scale: 0, opacity: 0, width: 0, marginRight: 0 }}
+                  animate={{ scale: 1, opacity: 1, width: 'auto', marginRight: 4 }}
+                  exit={{ scale: 0, opacity: 0, width: 0, marginRight: 0 }}
+                  transition={{ type: 'spring', stiffness: 450, damping: 25 }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 5,
+                    padding: '4px 10px',
+                    borderRadius: 'var(--radius-sm)',
+                    border: '1px solid var(--accent)',
+                    background: 'var(--accent-dim)',
+                    color: 'var(--accent-light)',
+                    cursor: 'pointer',
+                    fontWeight: 600,
+                    fontSize: 11,
+                    boxShadow: '0 0 6px var(--accent-glow)',
+                    animation: 'cyber-border-pulse 3s ease-in-out infinite',
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                  }}
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  onMouseDown={(e) => e.preventDefault()}
+                >
+                  <Save size={13} />
+                  <span>{language === 'es' ? 'Guardar' : 'Save'}</span>
+                </motion.button>
+              )}
+            </AnimatePresence>
+
             {/* Vista HTML */}
             <button 
               onClick={() => setIsRaw(!isRaw)}
