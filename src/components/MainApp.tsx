@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Folder, Note, ThemeId } from '../types';
+import { Language } from '../languages';
 import TitleBar from './TitleBar';
 import Sidebar from './Sidebar';
 import NoteList from './NoteList';
@@ -8,6 +9,8 @@ import SettingsModal from './SettingsModal';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface Props {
+  language: Language;
+  onLanguageChange: (l: Language) => void;
   currentTheme: ThemeId;
   onThemeChange: (t: ThemeId) => void;
   colorIntensity: number;
@@ -15,7 +18,7 @@ interface Props {
   onLock: () => void;
 }
 
-export default function MainApp({ currentTheme, onThemeChange, colorIntensity, onIntensityChange, onLock }: Props) {
+export default function MainApp({ language, onLanguageChange, currentTheme, onThemeChange, colorIntensity, onIntensityChange, onLock }: Props) {
   const [folders, setFolders] = useState<Folder[]>([]);
   const [notes, setNotes] = useState<Note[]>([]);
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
@@ -42,8 +45,10 @@ export default function MainApp({ currentTheme, onThemeChange, colorIntensity, o
   const [rememberLastNote, setRememberLastNote] = useState(false);
   const [showLineCounter, setShowLineCounter] = useState(false);
   const [autosaveEnabled, setAutosaveEnabled] = useState(true);
-  const [autoUnlockCapsLock, setAutoUnlockCapsLock] = useState(false);
-  const [autoUnlockCapsLockTimeout, setAutoUnlockCapsLockTimeout] = useState(8);
+  const [autoUnlockCapsLock, setAutoUnlockCapsLock] = useState(true);
+  const [autoUnlockCapsLockTimeout, setAutoUnlockCapsLockTimeout] = useState(0);
+  const [capsLockSound, setCapsLockSound] = useState('cyber-beep');
+  const [capsLockSoundScope, setCapsLockSoundScope] = useState('app');
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
@@ -78,6 +83,10 @@ export default function MainApp({ currentTheme, onThemeChange, colorIntensity, o
       }
     });
 
+    const unregisterOpenSettings = window.cyberNotesAPI.onOpenSettings(() => {
+      setShowSettings(true);
+    });
+
     const closeMenu = () => setContextMenu(null);
     window.addEventListener('click', closeMenu);
 
@@ -87,6 +96,7 @@ export default function MainApp({ currentTheme, onThemeChange, colorIntensity, o
       window.removeEventListener('click', closeMenu);
       if (unregisterContext) unregisterContext();
       if (unregisterSettingChanged) unregisterSettingChanged();
+      if (unregisterOpenSettings) unregisterOpenSettings();
     };
   }, []);
 
@@ -177,6 +187,12 @@ export default function MainApp({ currentTheme, onThemeChange, colorIntensity, o
     const capsLockTimeout = await window.cyberNotesAPI.getSetting('auto_unlock_caps_lock_timeout');
     if (capsLockTimeout) setAutoUnlockCapsLockTimeout(parseInt(capsLockTimeout));
 
+    const soundVal = await window.cyberNotesAPI.getSetting('caps_lock_sound');
+    setCapsLockSound(soundVal || 'cyber-beep');
+
+    const scopeVal = await window.cyberNotesAPI.getSetting('caps_lock_sound_scope');
+    setCapsLockSoundScope(scopeVal || 'app');
+
     if (isRemember) {
       const lastId = await window.cyberNotesAPI.getSetting('last_note_id');
       if (lastId) setSelectedNoteId(lastId);
@@ -235,7 +251,7 @@ export default function MainApp({ currentTheme, onThemeChange, colorIntensity, o
     const newNote: Note = {
       id: window.crypto.randomUUID(),
       folder_id: selectedFolderId,
-      title: 'Nueva nota',
+      title: language === 'es' ? 'Nueva nota' : 'New note',
       content: '',
       preview: '',
       pinned: 0,
@@ -281,7 +297,7 @@ export default function MainApp({ currentTheme, onThemeChange, colorIntensity, o
     await window.cyberNotesAPI.saveNote(updated);
     
     // Si estamos viendo una carpeta específica y movemos la nota a otra, la quitamos de la lista
-    if (selectedFolderId !== targetFolderId && !searchQuery) {
+    if (selectedFolderId !== null && selectedFolderId !== targetFolderId && !searchQuery) {
        const remaining = notes.filter(n => n.id !== noteId);
        setNotes(remaining);
        if (selectedNoteId === noteId) setSelectedNoteId(remaining.length > 0 ? remaining[0].id : null);
@@ -370,6 +386,16 @@ export default function MainApp({ currentTheme, onThemeChange, colorIntensity, o
     await window.cyberNotesAPI.setSetting('auto_unlock_caps_lock_timeout', val.toString());
   };
 
+  const handleCapsLockSoundChange = async (val: string) => {
+    setCapsLockSound(val);
+    await window.cyberNotesAPI.setSetting('caps_lock_sound', val);
+  };
+
+  const handleCapsLockSoundScopeChange = async (val: string) => {
+    setCapsLockSoundScope(val);
+    await window.cyberNotesAPI.setSetting('caps_lock_sound_scope', val);
+  };
+
   const selectedNote = notes.find(n => n.id === selectedNoteId) ?? null;
 
   const startDragSidebar = (e: React.MouseEvent) => {
@@ -440,6 +466,7 @@ export default function MainApp({ currentTheme, onThemeChange, colorIntensity, o
         {layoutMode === 3 && (
           <>
             <Sidebar
+              language={language}
               folders={folders}
               selectedFolderId={selectedFolderId}
               noteCount={notes.length}
@@ -471,6 +498,7 @@ export default function MainApp({ currentTheme, onThemeChange, colorIntensity, o
         {layoutMode >= 2 && (
           <>
             <NoteList
+              language={language}
               notes={notes}
               folders={folders}
               selectedNoteId={selectedNoteId}
@@ -494,6 +522,7 @@ export default function MainApp({ currentTheme, onThemeChange, colorIntensity, o
 
         {/* Editor */}
         <NoteEditor
+          language={language}
           note={selectedNote}
           onSave={handleSaveNote}
           onCreateNote={handleCreateNote}
@@ -504,6 +533,8 @@ export default function MainApp({ currentTheme, onThemeChange, colorIntensity, o
           autoUnlockCapsLock={autoUnlockCapsLock}
           onAutoUnlockCapsLockChange={handleAutoUnlockCapsLockChange}
           autoUnlockCapsLockTimeout={autoUnlockCapsLockTimeout}
+          capsLockSound={capsLockSound}
+          capsLockSoundScope={capsLockSoundScope}
           uiScale={uiScale}
           onScaleChange={handleScaleChange}
         />
@@ -511,6 +542,8 @@ export default function MainApp({ currentTheme, onThemeChange, colorIntensity, o
 
       {showSettings && (
         <SettingsModal
+          language={language}
+          onLanguageChange={onLanguageChange}
           currentTheme={currentTheme}
           onThemeChange={onThemeChange}
           colorIntensity={colorIntensity}
@@ -533,6 +566,10 @@ export default function MainApp({ currentTheme, onThemeChange, colorIntensity, o
           onAutoUnlockCapsLockChange={handleAutoUnlockCapsLockChange}
           autoUnlockCapsLockTimeout={autoUnlockCapsLockTimeout}
           onAutoUnlockCapsLockTimeoutChange={handleAutoUnlockCapsLockTimeoutChange}
+          capsLockSound={capsLockSound}
+          onCapsLockSoundChange={handleCapsLockSoundChange}
+          capsLockSoundScope={capsLockSoundScope}
+          onCapsLockSoundScopeChange={handleCapsLockSoundScopeChange}
           onClose={() => setShowSettings(false)}
           onLock={onLock}
         />

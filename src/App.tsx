@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { ThemeId } from './types';
 import { applyThemeVars } from './themes';
+import { Language } from './languages';
 import LockScreen from './components/LockScreen';
 import MainApp from './components/MainApp';
 
@@ -10,6 +11,7 @@ export default function App() {
   const [view, setView] = useState<AppView>('loading');
   const [theme, setTheme] = useState<ThemeId>('cyber-dark');
   const [colorIntensity, setColorIntensity] = useState(50);
+  const [language, setLanguage] = useState<Language>('en');
 
   // Cargar tema e intensidad guardados
   useEffect(() => {
@@ -17,10 +19,15 @@ export default function App() {
       try {
         const savedTheme = await window.cyberNotesAPI.getSetting('theme');
         const savedIntensity = await window.cyberNotesAPI.getSetting('colorIntensity');
+        const savedLanguage = await window.cyberNotesAPI.getSetting('language');
+        
         let t = savedTheme ? (savedTheme as ThemeId) : 'cyber-dark';
         let i = savedIntensity ? parseInt(savedIntensity) : 50;
+        let l = savedLanguage ? (savedLanguage as Language) : 'en';
+
         setTheme(t);
         setColorIntensity(i);
+        setLanguage(l);
         applyThemeVars(t, i);
 
         const hasPassword = await window.cyberNotesAPI.hasPassword();
@@ -45,6 +52,11 @@ export default function App() {
     await window.cyberNotesAPI.setSetting('colorIntensity', v.toString());
   }, [theme]);
 
+  const handleLanguageChange = useCallback(async (lang: Language) => {
+    setLanguage(lang);
+    await window.cyberNotesAPI.setSetting('language', lang);
+  }, []);
+
   const handleUnlock = () => setView('app');
 
   const handleLock = () => setView('lock');
@@ -66,11 +78,13 @@ export default function App() {
   }
 
   if (view === 'lock') {
-    return <LockScreen onUnlock={handleUnlock} />;
+    return <LockScreen language={language} onUnlock={handleUnlock} />;
   }
 
   return (
     <MainApp
+      language={language}
+      onLanguageChange={handleLanguageChange}
       currentTheme={theme}
       onThemeChange={handleThemeChange}
       colorIntensity={colorIntensity}

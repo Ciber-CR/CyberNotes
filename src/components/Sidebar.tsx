@@ -1,12 +1,14 @@
 import { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Folder, Note } from '../types';
+import { Language, TRANSLATIONS } from '../languages';
 import {
   Plus, FolderOpen, Settings, Lock, Search, X,
   ChevronRight, Pencil, Trash2, FileText, Clock,
 } from 'lucide-react';
 
 interface Props {
+  language: Language;
   folders: Folder[];
   selectedFolderId: string | null;
   noteCount: number;
@@ -29,25 +31,27 @@ const FOLDER_COLORS = [
   '#ef4444', '#ec4899', '#8b5cf6', '#14b8a6',
 ];
 
-function timeAgo(iso: string): string {
+function timeAgo(iso: string, language: Language): string {
   let diff = Date.now() - new Date(iso).getTime();
   let mins = Math.round(diff / 60000);
-  if (mins < 1) return 'Ahora';
-  if (mins < 60) return `hace ${mins} min`;
+  const isEn = language === 'en';
+  if (mins < 1) return isEn ? 'Just now' : 'Ahora';
+  if (mins < 60) return isEn ? `${mins}m ago` : `hace ${mins} min`;
   let hours = Math.floor(mins / 60);
-  if (hours < 24) return `hace ${hours}h`;
+  if (hours < 24) return isEn ? `${hours}h ago` : `hace ${hours}h`;
   let days = Math.floor(hours / 24);
-  if (days < 7) return `hace ${days} día${days > 1 ? 's' : ''}`;
+  if (days < 7) return isEn ? `${days}d ago` : `hace ${days} día${days > 1 ? 's' : ''}`;
   let weeks = Math.floor(days / 7);
-  if (weeks < 5) return `hace ${weeks} sem`;
-  return new Date(iso).toLocaleDateString('es-ES', { month: 'short', day: 'numeric' });
+  if (weeks < 5) return isEn ? `${weeks}w ago` : `hace ${weeks} sem`;
+  return new Date(iso).toLocaleDateString(isEn ? 'en-US' : 'es-ES', { month: 'short', day: 'numeric' });
 }
 
 export default function Sidebar({
-  folders, selectedFolderId, noteCount, recentNotes, onSelectNote,
+  language, folders, selectedFolderId, noteCount, recentNotes, onSelectNote,
   onSelectFolder, onCreateFolder, onUpdateFolder, onDeleteFolder,
   onOpenSettings, onLock, searchQuery, onSearch, onMoveNote,
 }: Props) {
+  const t = TRANSLATIONS[language];
   const [showNewFolder, setShowNewFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
   const [newFolderIcon, setNewFolderIcon] = useState('📁');
@@ -57,6 +61,30 @@ export default function Sidebar({
   const [showRecent, setShowRecent] = useState(false);
   const recentBtnRef = useRef<HTMLButtonElement>(null);
   const newFolderInputRef = useRef<HTMLInputElement>(null);
+
+  const [isNoteDragging, setIsNoteDragging] = useState(false);
+  const [activeDropTargetId, setActiveDropTargetId] = useState<string | null | 'all'>(null);
+
+  // Global drag listeners to activate target drop indicators
+  useEffect(() => {
+    const handleDragStart = (e: DragEvent) => {
+      setIsNoteDragging(true);
+    };
+    const handleDragEnd = () => {
+      setIsNoteDragging(false);
+      setActiveDropTargetId(null);
+    };
+
+    window.addEventListener('dragstart', handleDragStart);
+    window.addEventListener('dragend', handleDragEnd);
+    window.addEventListener('drop', handleDragEnd);
+
+    return () => {
+      window.removeEventListener('dragstart', handleDragStart);
+      window.removeEventListener('dragend', handleDragEnd);
+      window.removeEventListener('drop', handleDragEnd);
+    };
+  }, []);
 
   useEffect(() => {
     if (showNewFolder) setTimeout(() => newFolderInputRef.current?.focus(), 50);
@@ -128,7 +156,7 @@ export default function Sidebar({
             type="text"
             value={searchQuery}
             onChange={e => onSearch(e.target.value)}
-            placeholder="Buscar notas..."
+            placeholder={t.general.search}
             className="input"
             style={{ paddingLeft: 32, paddingRight: searchQuery ? 30 : 12, fontSize: 'calc(12px * var(--ui-scale))', padding: '7px 10px 7px 32px' }}
           />
@@ -151,40 +179,71 @@ export default function Sidebar({
         {/* Todas las notas */}
         <button
           onClick={() => onSelectFolder(null)}
-          onDragOver={e => e.preventDefault()}
+          onDragOver={e => {
+            e.preventDefault();
+            if (activeDropTargetId !== 'all') {
+              setActiveDropTargetId('all');
+            }
+          }}
+          onDragLeave={() => setActiveDropTargetId(null)}
           onDrop={e => {
             e.preventDefault();
             const noteId = e.dataTransfer.getData('text/plain');
-            if (noteId) onMoveNote(noteId, null);
+            setActiveDropTargetId(null);
+            setIsNoteDragging(false);
+            if (noteId) {
+              setTimeout(() => {
+                onMoveNote(noteId, null);
+              }, 50);
+            }
           }}
           style={{
             width: '100%',
             display: 'flex',
             alignItems: 'center',
             gap: 9,
-            padding: '8px 10px',
-            borderRadius: 'var(--radius-sm)',
-            border: 'none',
-             background: selectedFolderId === null && !searchQuery ? 'var(--bg-active)' : 'transparent',
-            color: selectedFolderId === null && !searchQuery ? 'var(--accent-light)' : 'var(--text-secondary)',
+            padding: '10px 12px',
+            borderRadius: 'var(--radius-md)',
+            border: isNoteDragging
+              ? activeDropTargetId === 'all'
+                ? '1px solid var(--accent)'
+                : '1px dashed rgba(124, 90, 237, 0.4)'
+              : '1px solid transparent',
+            background: activeDropTargetId === 'all'
+              ? 'var(--accent-dim)'
+              : selectedFolderId === null && !searchQuery
+                ? 'var(--bg-active)'
+                : 'transparent',
+            color: activeDropTargetId === 'all'
+              ? 'var(--accent-light)'
+              : selectedFolderId === null && !searchQuery
+                ? 'var(--accent-light)'
+                : 'var(--text-secondary)',
             cursor: 'pointer',
             fontSize: 'calc(13px * var(--ui-scale))',
-            fontWeight: selectedFolderId === null && !searchQuery ? 600 : 400,
+            fontWeight: (selectedFolderId === null && !searchQuery) || activeDropTargetId === 'all' ? 600 : 400,
             textAlign: 'left',
-            transition: 'all var(--transition)',
-            marginBottom: 2,
+            transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+            marginBottom: 4,
+            transform: activeDropTargetId === 'all' ? 'scale(1.03)' : 'none',
+            boxShadow: activeDropTargetId === 'all'
+              ? '0 0 12px var(--accent-glow)'
+              : isNoteDragging
+                ? '0 0 4px rgba(124, 90, 237, 0.15)'
+                : 'none',
           }}
-          onMouseEnter={e => { if (selectedFolderId !== null) (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'; }}
-          onMouseLeave={e => { if (selectedFolderId !== null) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+          onMouseEnter={e => { if (selectedFolderId !== null && activeDropTargetId !== 'all') (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'; }}
+          onMouseLeave={e => { if (selectedFolderId !== null && activeDropTargetId !== 'all') (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
         >
-          <FileText size={15} />
-          <span style={{ flex: 1 }}>Todas las notas</span>
+          <FileText size={15} style={{ pointerEvents: 'none' }} />
+          <span style={{ flex: 1, pointerEvents: 'none' }}>{t.sidebar.allNotes}</span>
           <span style={{
             fontSize: 'calc(11px * var(--ui-scale))',
             background: 'var(--bg-surface)',
             color: 'var(--text-muted)',
             padding: '1px 6px',
             borderRadius: 10,
+            pointerEvents: 'none',
           }}>{noteCount}</span>
         </button>
 
@@ -197,59 +256,104 @@ export default function Sidebar({
           letterSpacing: 1,
           padding: '12px 10px 6px',
         }}>
-          Folders
+          {t.sidebar.folders}
         </div>
 
         {/* Lista de folders */}
-        {folders.map(folder => (
-          <button
-            key={folder.id}
-            onClick={() => onSelectFolder(folder.id)}
-            onContextMenu={e => handleContextMenu(e, folder)}
-            onDragOver={e => e.preventDefault()}
-            onDrop={e => {
-              e.preventDefault();
-              const noteId = e.dataTransfer.getData('text/plain');
-              if (noteId) onMoveNote(noteId, folder.id);
-            }}
-            style={{
-              width: '100%',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 9,
-              padding: '8px 10px',
-              borderRadius: 'var(--radius-sm)',
-              border: 'none',
-              background: selectedFolderId === folder.id ? 'var(--bg-active)' : 'transparent',
-              color: selectedFolderId === folder.id ? 'var(--text-primary)' : 'var(--text-secondary)',
-              cursor: 'pointer',
-              fontSize: 'calc(13px * var(--ui-scale))',
-              fontWeight: selectedFolderId === folder.id ? 500 : 400,
-              textAlign: 'left',
-              transition: 'all var(--transition)',
-              marginBottom: 2,
-              position: 'relative',
-            }}
-            onMouseEnter={e => { if (selectedFolderId !== folder.id) (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'; }}
-            onMouseLeave={e => { if (selectedFolderId !== folder.id) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
-          >
-            {/* Color bar */}
-            {selectedFolderId === folder.id && (
-              <div style={{
-                position: 'absolute',
-                left: 0,
-                top: '20%',
-                bottom: '20%',
-                width: 3,
-                borderRadius: 2,
-                background: folder.color,
-              }} />
-            )}
-            <span style={{ fontSize: 'calc(15px * var(--ui-scale))' }}>{folder.icon}</span>
-            <span className="truncate" style={{ flex: 1 }}>{folder.name}</span>
-            <ChevronRight size={12} style={{ opacity: 0.4 }} />
-          </button>
-        ))}
+        {folders.map(folder => {
+          const isTarget = activeDropTargetId === folder.id;
+          const isSelected = selectedFolderId === folder.id;
+          return (
+            <button
+              key={folder.id}
+              onClick={() => onSelectFolder(folder.id)}
+              onContextMenu={e => handleContextMenu(e, folder)}
+              onDragOver={e => {
+                e.preventDefault();
+                if (activeDropTargetId !== folder.id) {
+                  setActiveDropTargetId(folder.id);
+                }
+              }}
+              onDragLeave={() => setActiveDropTargetId(null)}
+              onDrop={e => {
+                e.preventDefault();
+                const noteId = e.dataTransfer.getData('text/plain');
+                setActiveDropTargetId(null);
+                setIsNoteDragging(false);
+                if (noteId) {
+                  setTimeout(() => {
+                    onMoveNote(noteId, folder.id);
+                  }, 50);
+                }
+              }}
+              style={{
+                width: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 9,
+                padding: '10px 12px',
+                borderRadius: 'var(--radius-md)',
+                border: isNoteDragging
+                  ? isTarget
+                    ? `1px solid ${folder.color}`
+                    : `1px dashed ${folder.color}55`
+                  : '1px solid transparent',
+                background: isTarget
+                  ? `${folder.color}22`
+                  : isSelected
+                    ? 'var(--bg-active)'
+                    : 'transparent',
+                color: isTarget
+                  ? '#fff'
+                  : isSelected
+                    ? 'var(--text-primary)'
+                    : 'var(--text-secondary)',
+                cursor: 'pointer',
+                fontSize: 'calc(13px * var(--ui-scale))',
+                fontWeight: isSelected || isTarget ? 600 : 400,
+                textAlign: 'left',
+                transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+                marginBottom: 4,
+                position: 'relative',
+                transform: isTarget ? 'scale(1.03)' : 'none',
+                boxShadow: isTarget
+                  ? `0 0 12px ${folder.color}44, inset 0 0 6px ${folder.color}22`
+                  : isNoteDragging
+                    ? `0 0 4px ${folder.color}15`
+                    : 'none',
+              }}
+              onMouseEnter={e => { if (!isSelected && !isTarget) (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'; }}
+              onMouseLeave={e => { if (!isSelected && !isTarget) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+            >
+              {/* Color bar */}
+              {isSelected && !isTarget && (
+                <div style={{
+                  position: 'absolute',
+                  left: 0,
+                  top: '20%',
+                  bottom: '20%',
+                  width: 3,
+                  borderRadius: 2,
+                  background: folder.color,
+                  pointerEvents: 'none',
+                }} />
+              )}
+              <span style={{ 
+                fontSize: 'calc(15px * var(--ui-scale))',
+                transform: isTarget ? 'scale(1.2)' : 'none',
+                transition: 'transform 0.2s ease',
+                pointerEvents: 'none',
+              }}>{folder.icon}</span>
+              <span className="truncate" style={{ 
+                flex: 1,
+                textShadow: isTarget ? `0 0 4px ${folder.color}aa` : 'none',
+                color: isTarget ? '#fff' : undefined,
+                pointerEvents: 'none',
+              }}>{folder.name}</span>
+              <ChevronRight size={12} style={{ opacity: isTarget ? 0.8 : 0.4, color: isTarget ? folder.color : undefined, pointerEvents: 'none' }} />
+            </button>
+          );
+        })}
 
         {/* Nueva carpeta inline */}
         {showNewFolder && (
@@ -269,7 +373,7 @@ export default function Sidebar({
               value={newFolderName}
               onChange={e => setNewFolderName(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') handleCreateFolder(); if (e.key === 'Escape') setShowNewFolder(false); }}
-              placeholder="Nombre del folder"
+              placeholder={t.sidebar.folderName}
               className="input"
               style={{ fontSize: 'calc(12px * var(--ui-scale))' }}
             />
@@ -315,10 +419,10 @@ export default function Sidebar({
 
             <div style={{ display: 'flex', gap: 6 }}>
               <button className="btn btn-primary" onClick={handleCreateFolder} style={{ flex: 1, fontSize: 'calc(12px * var(--ui-scale))', padding: '6px' }}>
-                Crear
+                {t.sidebar.create}
               </button>
               <button className="btn btn-ghost" onClick={() => setShowNewFolder(false)} style={{ flex: 1, fontSize: 'calc(12px * var(--ui-scale))', padding: '6px' }}>
-                Cancelar
+                {t.general.cancel}
               </button>
             </div>
           </div>
@@ -331,7 +435,7 @@ export default function Sidebar({
             style={{ width: '100%', justifyContent: 'flex-start', marginTop: 4, fontSize: 'calc(12px * var(--ui-scale))', gap: 8, padding: '7px 10px' }}
           >
             <Plus size={14} />
-            Nuevo folder
+            {t.sidebar.newFolder}
           </button>
         )}
       </div>
@@ -343,7 +447,7 @@ export default function Sidebar({
           ref={recentBtnRef}
           className="btn btn-ghost"
           onClick={(e) => { e.stopPropagation(); setShowRecent(prev => !prev); }}
-          title="Notas recientes"
+          title={language === 'es' ? 'Notas recientes' : 'Recent notes'}
           style={{ padding: '7px 10px' }}
         >
           <Clock size={14} />
@@ -354,12 +458,12 @@ export default function Sidebar({
           style={{ flex: 1, fontSize: 'calc(12px * var(--ui-scale))', padding: '7px', gap: 6 }}
         >
           <Settings size={14} />
-          Ajustes
+          {t.settings.title.replace('⚙️ ', '')}
         </button>
         <button
           className="btn btn-ghost"
           onClick={onLock}
-          title="Bloquear"
+          title={language === 'es' ? 'Bloquear app' : 'Lock app'}
           style={{ padding: '7px 10px' }}
         >
           <Lock size={14} />
@@ -389,11 +493,11 @@ export default function Sidebar({
           onClick={(e) => e.stopPropagation()}
         >
           <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-secondary)', padding: '8px 10px 6px', textTransform: 'uppercase', letterSpacing: 0.5 }}>
-            Últimas notas
+            {language === 'es' ? 'Últimas notas' : 'Last notes'}
           </div>
           {recentNotes.length === 0 ? (
             <div style={{ fontSize: 15.5, color: 'var(--text-muted)', padding: '16px 10px', textAlign: 'center' }}>
-              Sin notas
+              {t.noteList.noNotes}
             </div>
           ) : (
             recentNotes.map((note, i) => (
@@ -426,14 +530,14 @@ export default function Sidebar({
                     whiteSpace: 'nowrap',
                     width: '100%',
                   }}>
-                    {note.title || 'Sin título'}
+                    {note.title || t.noteList.unnamedNote}
                   </span>
                   <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'flex-end' }}>
                     <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>
-                      {timeAgo(note.updated_at)}
+                      {timeAgo(note.updated_at, language)}
                     </span>
                     <span style={{ fontSize: 13, color: 'var(--text-muted)', opacity: 0.75 }}>
-                      {new Date(note.updated_at).toLocaleDateString('es-ES', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                      {new Date(note.updated_at).toLocaleDateString(language === 'es' ? 'es-ES' : 'en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
                     </span>
                   </div>
                 </button>
@@ -470,20 +574,20 @@ export default function Sidebar({
             }}
           >
             <Pencil size={13} />
-            Renombrar
+            {language === 'es' ? 'Renombrar' : 'Rename'}
           </button>
           <button
             className="btn btn-danger"
             style={{ width: '100%', justifyContent: 'flex-start', fontSize: 'calc(12px * var(--ui-scale))', padding: '6px 10px', gap: 8, marginTop: 2 }}
             onClick={() => {
-              if (confirm(`¿Eliminar "${contextMenu.folder.name}" y todas sus notas?`)) {
+              if (confirm(t.sidebar.context.deleteConfirm.replace('{name}', contextMenu.folder.name))) {
                 onDeleteFolder(contextMenu.folder.id);
               }
               setContextMenu(null);
             }}
           >
             <Trash2 size={13} />
-            Eliminar folder
+            {t.sidebar.context.delete}
           </button>
         </div>
       )}
@@ -504,7 +608,7 @@ export default function Sidebar({
             flexDirection: 'column',
             gap: 16,
           }}>
-            <h3 style={{ fontSize: 'calc(16px * var(--ui-scale))', fontWeight: 600, color: 'var(--text-primary)' }}>Editar folder</h3>
+            <h3 style={{ fontSize: 'calc(16px * var(--ui-scale))', fontWeight: 600, color: 'var(--text-primary)' }}>{t.sidebar.context.edit}</h3>
 
             <input
               type="text"
@@ -553,8 +657,8 @@ export default function Sidebar({
             </div>
 
             <div style={{ display: 'flex', gap: 8 }}>
-              <button className="btn btn-primary" onClick={handleSaveEdit} style={{ flex: 1 }}>Guardar</button>
-              <button className="btn btn-ghost" onClick={() => setEditingFolder(null)} style={{ flex: 1 }}>Cancelar</button>
+              <button className="btn btn-primary" onClick={handleSaveEdit} style={{ flex: 1 }}>{t.general.save}</button>
+              <button className="btn btn-ghost" onClick={() => setEditingFolder(null)} style={{ flex: 1 }}>{t.general.cancel}</button>
             </div>
           </div>
         </div>

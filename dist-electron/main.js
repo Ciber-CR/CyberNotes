@@ -1,33 +1,33 @@
-import { app as l, ipcMain as r, shell as N, session as b, dialog as m, BrowserWindow as D, Tray as M, Menu as U } from "electron";
+import { app as c, ipcMain as a, shell as N, session as D, dialog as L, BrowserWindow as I, Tray as H, Menu as j } from "electron";
 import d from "path";
-import u from "fs";
-import { fileURLToPath as j } from "url";
-import { createRequire as H } from "module";
-import { exec as F } from "child_process";
-const S = d.dirname(j(import.meta.url)), C = H(import.meta.url), R = !l.isPackaged;
-let y = d.join(S, "..", "public", "icon.png");
-R || (y = d.join(l.getAppPath(), "dist", "icon.png"));
-if (!u.existsSync(y)) {
-  const t = d.join(R ? d.join(S, "..", "public") : d.join(l.getAppPath(), "dist"), "icon.ico");
-  u.existsSync(t) && (y = t);
+import E from "fs";
+import { fileURLToPath as W } from "url";
+import { createRequire as z } from "module";
+import { exec as x, spawn as B } from "child_process";
+const g = d.dirname(W(import.meta.url)), v = z(import.meta.url), w = !c.isPackaged;
+let y = d.join(g, "..", "public", "icon.png");
+w || (y = d.join(c.getAppPath(), "dist", "icon.png"));
+if (!E.existsSync(y)) {
+  const s = d.join(w ? d.join(g, "..", "public") : d.join(c.getAppPath(), "dist"), "icon.ico");
+  E.existsSync(s) && (y = s);
 }
-const I = C("bcryptjs"), k = l.getPath("userData"), T = d.join(k, "cybernotes.db"), w = d.join(k, "images"), { v4: B } = C("uuid");
-let p = null, L = null;
-function x() {
-  if (!p) return;
-  const t = p.export();
-  u.writeFileSync(T, Buffer.from(t));
+const P = v("bcryptjs"), A = c.getPath("userData"), T = d.join(A, "cybernotes.db"), C = d.join(A, "images"), { v4: q } = v("uuid");
+let f = null, _ = null;
+function M() {
+  if (!f) return;
+  const s = f.export();
+  E.writeFileSync(T, Buffer.from(s));
 }
-async function q() {
-  const t = R ? d.join(S, "..", "node_modules", "sql.js", "dist", "sql-wasm.wasm") : d.join(process.resourcesPath, "sql-wasm.wasm");
-  if (L = await C("sql.js")({
-    locateFile: () => t
-  }), u.existsSync(T)) {
-    const n = u.readFileSync(T);
-    p = new L.Database(n);
+async function X() {
+  const s = w ? d.join(g, "..", "node_modules", "sql.js", "dist", "sql-wasm.wasm") : d.join(process.resourcesPath, "sql-wasm.wasm");
+  if (_ = await v("sql.js")({
+    locateFile: () => s
+  }), E.existsSync(T)) {
+    const n = E.readFileSync(T);
+    f = new _.Database(n);
   } else
-    p = new L.Database();
-  p.run(`
+    f = new _.Database();
+  f.run(`
     CREATE TABLE IF NOT EXISTS settings (
       key   TEXT PRIMARY KEY,
       value TEXT NOT NULL
@@ -52,82 +52,123 @@ async function q() {
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
-  `), x(), u.existsSync(w) || u.mkdirSync(w, { recursive: !0 });
+  `), M(), E.existsSync(C) || E.mkdirSync(C, { recursive: !0 });
 }
-function h(t, e = []) {
-  if (!p) throw new Error("Base de datos no inicializada");
-  const n = p.prepare(t);
+function S(s, e = []) {
+  if (!f) throw new Error("Base de datos no inicializada");
+  const n = f.prepare(s);
   n.bind(e);
   const o = [];
   for (; n.step(); )
     o.push(n.getAsObject());
   return n.free(), o;
 }
-function f(t, e = []) {
-  const n = h(t, e);
+function u(s, e = []) {
+  const n = S(s, e);
   return n.length > 0 ? n[0] : null;
 }
-function i(t, e = []) {
-  if (!p) throw new Error("Base de datos no inicializada");
-  p.run(t, e), x();
+function l(s, e = []) {
+  if (!f) throw new Error("Base de datos no inicializada");
+  f.run(s, e), M();
 }
-let s = null, E = null, _ = !1, O = !1;
-function g() {
-  if (!s) return;
-  const t = f("SELECT value FROM settings WHERE key = ?", ["is_maximized"]);
-  (t == null ? void 0 : t.value) === "true" && s.maximize(), s.show(), s.focus();
+let t = null, p = null, k = !1, O = !1, h = null;
+function U() {
+  if (h || process.platform !== "win32") return;
+  const s = `
+    Add-Type -AssemblyName System.Windows.Forms;
+    $lastState = [System.Windows.Forms.Control]::IsKeyLocked('CapsLock')
+    Write-Host "STATE:$lastState"
+    while ($true) {
+      $state = [System.Windows.Forms.Control]::IsKeyLocked('CapsLock')
+      if ($state -ne $lastState) {
+        Write-Host "STATE:$state"
+        $lastState = $state
+      }
+      Start-Sleep -Milliseconds 500
+    }
+  `;
+  try {
+    h = B("powershell", ["-Command", s]), h.stdout.on("data", (e) => {
+      const o = e.toString().split(`
+`);
+      for (const r of o)
+        if (r.trim().startsWith("STATE:")) {
+          const i = r.trim().substring(6).toLowerCase() === "true";
+          t && !t.isDestroyed() && t.webContents.send("global-caps-lock-changed", i);
+        }
+    }), h.on("exit", () => {
+      h = null;
+    });
+  } catch (e) {
+    console.error("Failed to start caps lock worker:", e);
+  }
 }
-function X() {
-  const t = f("SELECT value FROM settings WHERE key = ?", ["auto_unlock_caps_lock"]), e = (t == null ? void 0 : t.value) === "true";
+function $() {
+  h && (h.kill(), h = null);
+}
+function m() {
+  if (!t) return;
+  t.isMinimized() && t.restore();
+  const s = u("SELECT value FROM settings WHERE key = ?", ["is_maximized"]);
+  (s == null ? void 0 : s.value) === "true" && t.maximize(), t.show(), t.focus();
+}
+function K() {
+  const s = u("SELECT value FROM settings WHERE key = ?", ["auto_unlock_caps_lock"]), e = (s == null ? void 0 : s.value) === "true", n = u("SELECT value FROM settings WHERE key = ?", ["language"]), r = ((n == null ? void 0 : n.value) || "en") === "es";
   return [
-    { label: "Abrir CyberNotes", click: g },
-    { type: "separator" },
+    { label: r ? "Abrir CyberNotes" : "Open CyberNotes", click: m },
     {
-      label: "Desactivar CapsLock por inactividad",
-      type: "checkbox",
-      checked: e,
-      click: (n) => {
-        const o = n.checked;
-        i("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", ["auto_unlock_caps_lock", o ? "true" : "false"]), v(), s && !s.isDestroyed() && s.webContents.send("setting-changed", { key: "auto_unlock_caps_lock", value: o ? "true" : "false" });
+      label: r ? "Configuración" : "Settings",
+      click: () => {
+        m(), t && !t.isDestroyed() && t.webContents.send("open-settings");
       }
     },
     { type: "separator" },
     {
-      label: "Salir",
+      label: r ? "Desactivar CapsLock por inactividad" : "Disable Caps Lock on inactivity",
+      type: "checkbox",
+      checked: e,
+      click: (i) => {
+        const R = i.checked;
+        l("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", ["auto_unlock_caps_lock", R ? "true" : "false"]), b(), t && !t.isDestroyed() && t.webContents.send("setting-changed", { key: "auto_unlock_caps_lock", value: R ? "true" : "false" });
+      }
+    },
+    { type: "separator" },
+    {
+      label: r ? "Salir" : "Quit",
       click: () => {
-        _ = !0, l.quit();
+        k = !0, c.quit();
       }
     }
   ];
 }
-function v() {
-  if (!(!E || E.isDestroyed()))
+function b() {
+  if (!(!p || p.isDestroyed()))
     try {
-      const t = U.buildFromTemplate(X());
-      E.setContextMenu(t);
-    } catch (t) {
-      console.error("Failed to update tray menu:", t);
+      const s = j.buildFromTemplate(K());
+      p.setContextMenu(s);
+    } catch (s) {
+      console.error("Failed to update tray menu:", s);
     }
 }
-function z() {
+function Y() {
   try {
-    E = new M(y), v(), E.setToolTip("CyberNotes"), E.on("click", () => {
-      s != null && s.isVisible() ? s.hide() : g();
+    p = new H(y), b(), p.setToolTip("CyberNotes"), p.on("click", () => {
+      t != null && t.isVisible() ? t.hide() : m();
     });
-  } catch (t) {
-    console.error("Failed to create tray:", t);
+  } catch (s) {
+    console.error("Failed to create tray:", s);
   }
 }
-function A() {
-  const t = f("SELECT value FROM settings WHERE key = ?", ["window_bounds"]), e = f("SELECT value FROM settings WHERE key = ?", ["is_maximized"]);
+function F() {
+  const s = u("SELECT value FROM settings WHERE key = ?", ["window_bounds"]), e = u("SELECT value FROM settings WHERE key = ?", ["is_maximized"]);
   let n = { width: 1100, height: 700, x: void 0, y: void 0 };
-  if (t)
+  if (s)
     try {
-      const a = JSON.parse(t.value);
-      a.width > 400 && a.height > 400 && (n = a);
+      const r = JSON.parse(s.value);
+      r.width > 400 && r.height > 400 && (n = r);
     } catch {
     }
-  s = new D({
+  t = new I({
     width: n.width,
     height: n.height,
     x: n.x,
@@ -140,7 +181,7 @@ function A() {
     backgroundColor: "#0d0d14",
     icon: y,
     webPreferences: {
-      preload: d.join(S, "preload.mjs"),
+      preload: d.join(g, "preload.mjs"),
       contextIsolation: !0,
       nodeIntegration: !1,
       webSecurity: !1
@@ -148,157 +189,163 @@ function A() {
     show: !1
   });
   const o = () => {
-    if (!s || s.isDestroyed()) return;
-    const a = s.isMaximized();
-    i("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", ["is_maximized", a ? "true" : "false"]);
-    const c = s.getBounds();
-    c.width > 100 && c.height > 100 && i("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", ["window_bounds", JSON.stringify(c)]);
+    if (!t || t.isDestroyed()) return;
+    const r = t.isMaximized();
+    l("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", ["is_maximized", r ? "true" : "false"]);
+    const i = t.getBounds();
+    i.width > 100 && i.height > 100 && l("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", ["window_bounds", JSON.stringify(i)]);
   };
-  s.on("resize", o), s.on("move", o), s.on("close", o), s.on("maximize", o), s.on("unmaximize", o), s.on("hide", o), s.on("close", (a) => {
-    const c = f("SELECT value FROM settings WHERE key = ?", ["close_to_tray"]);
-    if ((c == null ? void 0 : c.value) === "true" && !_)
-      return a.preventDefault(), s == null || s.hide(), !1;
+  t.on("resize", o), t.on("move", o), t.on("close", o), t.on("maximize", o), t.on("unmaximize", o), t.on("hide", o), t.on("minimize", () => {
+    const r = u("SELECT value FROM settings WHERE key = ?", ["minimize_to_tray"]);
+    (r == null ? void 0 : r.value) === "true" && (t == null || t.hide());
+  }), t.on("close", (r) => {
+    const i = u("SELECT value FROM settings WHERE key = ?", ["close_to_tray"]);
+    if ((i == null ? void 0 : i.value) === "true" && !k)
+      return r.preventDefault(), t == null || t.hide(), !1;
     if (O)
-      return a.preventDefault(), m.showMessageBox(s, {
+      return r.preventDefault(), L.showMessageBox(t, {
         type: "question",
         buttons: ["Salir sin guardar", "Cancelar"],
         defaultId: 1,
         title: "Cambios sin guardar",
         message: "Tienes cambios sin guardar en la nota actual. ¿Salir sin guardar?"
-      }).then((P) => {
-        P.response === 0 && (O = !1, _ = !0, s == null || s.close());
+      }).then((R) => {
+        R.response === 0 && (O = !1, k = !0, t == null || t.close());
       }), !1;
-    E && !E.isDestroyed() && (E.destroy(), E = null);
-  }), s.webContents.setWindowOpenHandler(({ url: a }) => (a.startsWith("http") && N.openExternal(a), { action: "deny" })), s.webContents.on("context-menu", (a, c) => {
-    s == null || s.webContents.send("context-menu-data", {
-      x: c.x,
-      y: c.y,
-      suggestions: c.dictionarySuggestions,
-      misspelledWord: c.misspelledWord,
-      linkURL: c.linkURL
+    p && !p.isDestroyed() && (p.destroy(), p = null);
+  }), t.webContents.setWindowOpenHandler(({ url: r }) => (r.startsWith("http") && N.openExternal(r), { action: "deny" })), t.webContents.on("context-menu", (r, i) => {
+    r.preventDefault(), t == null || t.webContents.send("context-menu-data", {
+      x: i.x,
+      y: i.y,
+      suggestions: i.dictionarySuggestions,
+      misspelledWord: i.misspelledWord,
+      linkURL: i.linkURL
     });
-  }), R ? s.loadURL("http://localhost:5173") : s.loadFile(d.join(S, "../dist/index.html")), s.once("ready-to-show", () => {
-    process.argv.includes("--hidden") || ((e == null ? void 0 : e.value) === "true" && (s == null || s.maximize()), s.show(), s.focus());
+  }), w ? t.loadURL("http://localhost:5173") : t.loadFile(d.join(g, "../dist/index.html")), t.once("ready-to-show", () => {
+    process.argv.includes("--hidden") || ((e == null ? void 0 : e.value) === "true" && (t == null || t.maximize()), t.show(), t.focus());
   });
 }
-r.handle("window-minimize", () => s == null ? void 0 : s.minimize());
-r.handle("window-maximize-toggle", () => {
-  s != null && s.isMaximized() ? s.unmaximize() : s == null || s.maximize();
+a.handle("window-minimize", () => {
+  const s = u("SELECT value FROM settings WHERE key = ?", ["minimize_to_tray"]);
+  (s == null ? void 0 : s.value) === "true" ? t == null || t.hide() : t == null || t.minimize();
 });
-r.handle("window-close", () => s == null ? void 0 : s.close());
-r.handle("window:unsavedChanges:set", (t, e) => {
+a.handle("window-maximize-toggle", () => {
+  t != null && t.isMaximized() ? t.unmaximize() : t == null || t.maximize();
+});
+a.handle("window-close", () => t == null ? void 0 : t.close());
+a.handle("window:unsavedChanges:set", (s, e) => {
   O = e;
 });
-r.handle("open-dev-tools", () => s == null ? void 0 : s.webContents.openDevTools({ mode: "detach" }));
-r.handle("open-data-folder", () => N.openPath(k));
-r.handle("replace-misspelling", (t, e) => s == null ? void 0 : s.webContents.replaceMisspelling(e));
-r.handle("add-to-dictionary", (t, e) => {
-  b.defaultSession.addWordToSpellCheckerDictionary(e);
+a.handle("open-dev-tools", () => t == null ? void 0 : t.webContents.openDevTools({ mode: "detach" }));
+a.handle("open-data-folder", () => N.openPath(A));
+a.handle("replace-misspelling", (s, e) => t == null ? void 0 : t.webContents.replaceMisspelling(e));
+a.handle("add-to-dictionary", (s, e) => {
+  D.defaultSession.addWordToSpellCheckerDictionary(e);
 });
-r.handle("unlock-caps-lock", async () => process.platform !== "win32" ? !1 : new Promise((t) => {
-  F(`powershell -Command "Add-Type -AssemblyName System.Windows.Forms; if ([System.Windows.Forms.Control]::IsKeyLocked('CapsLock')) { (New-Object -ComObject WScript.Shell).SendKeys('{CAPSLOCK}'); Write-Host 'unlocked' } else { Write-Host 'already-off' }"`, (n, o) => {
+a.handle("unlock-caps-lock", async () => process.platform !== "win32" ? !1 : new Promise((s) => {
+  x(`powershell -Command "Add-Type -AssemblyName System.Windows.Forms; if ([System.Windows.Forms.Control]::IsKeyLocked('CapsLock')) { (New-Object -ComObject WScript.Shell).SendKeys('{CAPSLOCK}'); Write-Host 'unlocked' } else { Write-Host 'already-off' }"`, (n, o) => {
     if (n)
-      console.error("Failed to unlock caps lock:", n), t(!1);
+      console.error("Failed to unlock caps lock:", n), s(!1);
     else {
-      const a = o.trim();
-      t(a === "unlocked" || a === "already-off");
+      const r = o.trim();
+      s(r === "unlocked" || r === "already-off");
     }
   });
 }));
-r.handle("check-caps-lock", async () => process.platform !== "win32" ? !1 : new Promise((t) => {
-  F(`powershell -Command "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Control]::IsKeyLocked('CapsLock')"`, (n, o) => {
-    t(n ? !1 : o.trim().toLowerCase() === "true");
+a.handle("check-caps-lock", async () => process.platform !== "win32" ? !1 : new Promise((s) => {
+  x(`powershell -Command "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Control]::IsKeyLocked('CapsLock')"`, (n, o) => {
+    s(n ? !1 : o.trim().toLowerCase() === "true");
   });
 }));
-r.handle("auth:hasPassword", () => !!f("SELECT value FROM settings WHERE key = ?", ["password_hash"]));
-r.handle("auth:setPassword", async (t, e) => {
-  const n = await I.hash(e, 10);
-  return i("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", ["password_hash", n]), !0;
+a.handle("auth:hasPassword", () => !!u("SELECT value FROM settings WHERE key = ?", ["password_hash"]));
+a.handle("auth:setPassword", async (s, e) => {
+  const n = await P.hash(e, 10);
+  return l("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", ["password_hash", n]), !0;
 });
-r.handle("auth:verifyPassword", async (t, e) => {
-  const n = f("SELECT value FROM settings WHERE key = ?", ["password_hash"]);
-  return n ? I.compare(e, n.value) : !0;
+a.handle("auth:verifyPassword", async (s, e) => {
+  const n = u("SELECT value FROM settings WHERE key = ?", ["password_hash"]);
+  return n ? P.compare(e, n.value) : !0;
 });
-r.handle("auth:removePassword", () => (i("DELETE FROM settings WHERE key = ?", ["password_hash"]), !0));
-r.handle("settings:get", (t, e) => {
-  const n = f("SELECT value FROM settings WHERE key = ?", [e]);
+a.handle("auth:removePassword", () => (l("DELETE FROM settings WHERE key = ?", ["password_hash"]), !0));
+a.handle("settings:get", (s, e) => {
+  const n = u("SELECT value FROM settings WHERE key = ?", [e]);
   return n ? n.value : null;
 });
-r.handle("settings:set", (t, e, n) => (i("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", [e, n]), e === "auto_unlock_caps_lock" && v(), !0));
-r.handle("settings:setAutoStart", (t, e) => (l.setLoginItemSettings({
+a.handle("settings:set", (s, e, n) => (l("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", [e, n]), (e === "auto_unlock_caps_lock" || e === "language") && b(), e === "caps_lock_sound_scope" && (n === "global" ? U() : $()), !0));
+a.handle("settings:setAutoStart", (s, e) => (c.setLoginItemSettings({
   openAtLogin: e,
   openAsHidden: !0,
   // macOS
   args: e ? ["--hidden"] : []
   // Windows / Linux
-}), i("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", ["auto_start", e ? "true" : "false"]), !0));
-r.handle("settings:getAutoStart", () => l.getLoginItemSettings().openAtLogin);
-r.handle("folders:getAll", () => h("SELECT * FROM folders ORDER BY name COLLATE NOCASE ASC"));
-r.handle("folders:create", (t, e) => (i(
+}), l("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", ["auto_start", e ? "true" : "false"]), !0));
+a.handle("settings:getAutoStart", () => c.getLoginItemSettings().openAtLogin);
+a.handle("folders:getAll", () => S("SELECT * FROM folders ORDER BY name COLLATE NOCASE ASC"));
+a.handle("folders:create", (s, e) => (l(
   "INSERT INTO folders (id, name, icon, color, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?)",
   [e.id, e.name, e.icon, e.color, e.sort_order, e.created_at]
 ), e));
-r.handle("folders:update", (t, e) => (i(
+a.handle("folders:update", (s, e) => (l(
   "UPDATE folders SET name = ?, icon = ?, color = ?, sort_order = ? WHERE id = ?",
   [e.name, e.icon, e.color, e.sort_order, e.id]
 ), !0));
-r.handle("folders:delete", (t, e) => (i("DELETE FROM notes WHERE folder_id = ?", [e]), i("DELETE FROM folders WHERE id = ?", [e]), !0));
-r.handle("notes:getAll", () => h("SELECT * FROM notes ORDER BY pinned DESC, updated_at DESC"));
-r.handle("notes:getByFolder", (t, e) => e ? h("SELECT * FROM notes WHERE folder_id = ? ORDER BY pinned DESC, updated_at DESC", [e]) : h("SELECT * FROM notes ORDER BY pinned DESC, updated_at DESC"));
-r.handle("notes:save", (t, e) => (f("SELECT id FROM notes WHERE id = ?", [e.id]) ? i(
+a.handle("folders:delete", (s, e) => (l("DELETE FROM notes WHERE folder_id = ?", [e]), l("DELETE FROM folders WHERE id = ?", [e]), !0));
+a.handle("notes:getAll", () => S("SELECT * FROM notes ORDER BY pinned DESC, updated_at DESC"));
+a.handle("notes:getByFolder", (s, e) => e ? S("SELECT * FROM notes WHERE folder_id = ? ORDER BY pinned DESC, updated_at DESC", [e]) : S("SELECT * FROM notes ORDER BY pinned DESC, updated_at DESC"));
+a.handle("notes:save", (s, e) => (u("SELECT id FROM notes WHERE id = ?", [e.id]) ? l(
   "UPDATE notes SET folder_id = ?, title = ?, content = ?, preview = ?, pinned = ?, updated_at = ? WHERE id = ?",
   [e.folder_id, e.title, e.content, e.preview, e.pinned, e.updated_at, e.id]
-) : i(
+) : l(
   "INSERT INTO notes (id, folder_id, title, content, preview, pinned, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
   [e.id, e.folder_id, e.title, e.content, e.preview, e.pinned, e.created_at, e.updated_at]
 ), e));
-r.handle("notes:delete", (t, e) => (i("DELETE FROM notes WHERE id = ?", [e]), !0));
-r.handle("notes:search", (t, e) => {
+a.handle("notes:delete", (s, e) => (l("DELETE FROM notes WHERE id = ?", [e]), !0));
+a.handle("notes:search", (s, e) => {
   const n = `%${e}%`;
-  return h(
+  return S(
     "SELECT * FROM notes WHERE title LIKE ? OR preview LIKE ? OR content LIKE ? ORDER BY pinned DESC, updated_at DESC",
     [n, n, n]
   );
 });
-r.handle("images:selectAndSave", async () => {
-  const t = await m.showOpenDialog(s, {
+a.handle("images:selectAndSave", async () => {
+  const s = await L.showOpenDialog(t, {
     title: "Seleccionar imagen",
     filters: [{ name: "Imágenes", extensions: ["png", "jpg", "jpeg", "gif", "webp", "svg"] }],
     properties: ["openFile"]
   });
-  if (t.canceled || !t.filePaths.length) return null;
-  const e = t.filePaths[0], n = d.extname(e), o = `${B()}${n}`, a = d.join(w, o);
-  return u.copyFileSync(e, a), `file:///${a.replace(/\\/g, "/")}`;
+  if (s.canceled || !s.filePaths.length) return null;
+  const e = s.filePaths[0], n = d.extname(e), o = `${q()}${n}`, r = d.join(C, o);
+  return E.copyFileSync(e, r), `file:///${r.replace(/\\/g, "/")}`;
 });
-r.handle("data:export", async () => {
-  const t = await m.showSaveDialog(s, {
+a.handle("data:export", async () => {
+  const s = await L.showSaveDialog(t, {
     title: "Exportar datos de CyberNotes",
     defaultPath: "cybernotes-export.json",
     filters: [{ name: "JSON", extensions: ["json"] }]
   });
-  if (t.canceled || !t.filePath) return !1;
-  const e = h("SELECT * FROM folders"), n = h("SELECT * FROM notes"), o = { folders: e, notes: n, version: 1 };
-  return u.writeFileSync(t.filePath, JSON.stringify(o, null, 2)), !0;
+  if (s.canceled || !s.filePath) return !1;
+  const e = S("SELECT * FROM folders"), n = S("SELECT * FROM notes"), o = { folders: e, notes: n, version: 1 };
+  return E.writeFileSync(s.filePath, JSON.stringify(o, null, 2)), !0;
 });
-r.handle("data:import", async () => {
-  const t = await m.showOpenDialog(s, {
+a.handle("data:import", async () => {
+  const s = await L.showOpenDialog(t, {
     title: "Importar datos a CyberNotes",
     filters: [{ name: "JSON", extensions: ["json"] }],
     properties: ["openFile"]
   });
-  if (t.canceled || !t.filePaths.length) return !1;
+  if (s.canceled || !s.filePaths.length) return !1;
   try {
-    const e = JSON.parse(u.readFileSync(t.filePaths[0], "utf-8"));
+    const e = JSON.parse(E.readFileSync(s.filePaths[0], "utf-8"));
     if (!e.folders || !e.notes) return !1;
     const n = T + ".backup-" + Date.now();
-    u.existsSync(T) && u.copyFileSync(T, n);
+    E.existsSync(T) && E.copyFileSync(T, n);
     for (const o of e.folders)
-      i(
+      l(
         "INSERT OR REPLACE INTO folders (id, name, icon, color, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?)",
         [o.id, o.name, o.icon, o.color, o.sort_order, o.created_at]
       );
     for (const o of e.notes)
-      i(
+      l(
         "INSERT OR REPLACE INTO notes (id, folder_id, title, content, preview, pinned, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         [o.id, o.folder_id, o.title, o.content, o.preview, o.pinned, o.created_at, o.updated_at]
       );
@@ -307,13 +354,15 @@ r.handle("data:import", async () => {
     return console.error("Import error:", e), !1;
   }
 });
-const W = l.requestSingleInstanceLock();
-W ? (l.on("second-instance", (t, e, n) => {
-  g();
-}), l.whenReady().then(async () => {
-  b.defaultSession.setSpellCheckerLanguages(["es-ES", "en-US"]), await q(), A(), z(), l.on("activate", () => {
-    D.getAllWindows().length === 0 ? A() : g();
+const J = c.requestSingleInstanceLock();
+J ? (c.on("second-instance", (s, e, n) => {
+  m();
+}), c.whenReady().then(async () => {
+  D.defaultSession.setSpellCheckerLanguages(["es-ES", "en-US"]), await X(), F(), Y();
+  const s = u("SELECT value FROM settings WHERE key = ?", ["caps_lock_sound_scope"]);
+  (s == null ? void 0 : s.value) === "global" && U(), c.on("activate", () => {
+    I.getAllWindows().length === 0 ? F() : m();
   });
-}), l.on("window-all-closed", () => {
-  process.platform !== "darwin" && (E || l.quit());
-})) : l.quit();
+}), c.on("window-all-closed", () => {
+  process.platform !== "darwin" && (p || c.quit());
+})) : c.quit();

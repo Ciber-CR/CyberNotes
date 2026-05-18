@@ -29,6 +29,16 @@ contextBridge.exposeInMainWorld('cyberNotesAPI', {
     ipcRenderer.on('setting-changed', listener);
     return () => ipcRenderer.removeListener('setting-changed', listener);
   },
+  onGlobalCapsLockChanged: (callback: (active: boolean) => void) => {
+    const listener = (_e: any, active: boolean) => callback(active);
+    ipcRenderer.on('global-caps-lock-changed', listener);
+    return () => ipcRenderer.removeListener('global-caps-lock-changed', listener);
+  },
+  onOpenSettings: (callback: () => void) => {
+    const listener = () => callback();
+    ipcRenderer.on('open-settings', listener);
+    return () => ipcRenderer.removeListener('open-settings', listener);
+  },
 
   // -- Auth --
   hasPassword: () => ipcRenderer.invoke('auth:hasPassword'),

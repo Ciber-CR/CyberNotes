@@ -3,7 +3,7 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
-import { exec } from 'child_process';
+import { exec, spawn } from 'child_process';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
@@ -131,9 +131,60 @@ let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let isQuitting = false;
 let hasUnsavedChanges = false;
+let capsLockWorker: any = null;
+
+function startCapsLockWorker() {
+  if (capsLockWorker) return;
+  if (process.platform !== 'win32') return;
+
+  const psScript = `
+    Add-Type -AssemblyName System.Windows.Forms;
+    $lastState = [System.Windows.Forms.Control]::IsKeyLocked('CapsLock')
+    Write-Host "STATE:$lastState"
+    while ($true) {
+      $state = [System.Windows.Forms.Control]::IsKeyLocked('CapsLock')
+      if ($state -ne $lastState) {
+        Write-Host "STATE:$state"
+        $lastState = $state
+      }
+      Start-Sleep -Milliseconds 500
+    }
+  `;
+
+  try {
+    capsLockWorker = spawn('powershell', ['-Command', psScript]);
+
+    capsLockWorker.stdout.on('data', (data: Buffer) => {
+      const output = data.toString();
+      const lines = output.split('\n');
+      for (const line of lines) {
+        if (line.trim().startsWith('STATE:')) {
+          const state = line.trim().substring(6).toLowerCase() === 'true';
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('global-caps-lock-changed', state);
+          }
+        }
+      }
+    });
+
+    capsLockWorker.on('exit', () => {
+      capsLockWorker = null;
+    });
+  } catch (err) {
+    console.error('Failed to start caps lock worker:', err);
+  }
+}
+
+function stopCapsLockWorker() {
+  if (capsLockWorker) {
+    capsLockWorker.kill();
+    capsLockWorker = null;
+  }
+}
 
 function restoreWindow() {
   if (!mainWindow) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
   const maxVal = queryGet('SELECT value FROM settings WHERE key = ?', ['is_maximized']);
   if (maxVal?.value === 'true') mainWindow.maximize();
   mainWindow.show();
@@ -144,11 +195,24 @@ function getTrayMenuTemplate(): any[] {
   const capsLockVal = queryGet('SELECT value FROM settings WHERE key = ?', ['auto_unlock_caps_lock']);
   const isCapsUnlockEnabled = capsLockVal?.value === 'true';
 
+  const langVal = queryGet('SELECT value FROM settings WHERE key = ?', ['language']);
+  const lang = langVal?.value || 'en';
+  const isEs = lang === 'es';
+
   return [
-    { label: 'Abrir CyberNotes', click: restoreWindow },
+    { label: isEs ? 'Abrir CyberNotes' : 'Open CyberNotes', click: restoreWindow },
+    { 
+      label: isEs ? 'Configuración' : 'Settings', 
+      click: () => {
+        restoreWindow();
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('open-settings');
+        }
+      } 
+    },
     { type: 'separator' },
     { 
-      label: 'Desactivar CapsLock por inactividad', 
+      label: isEs ? 'Desactivar CapsLock por inactividad' : 'Disable Caps Lock on inactivity', 
       type: 'checkbox', 
       checked: isCapsUnlockEnabled, 
       click: (menuItem: any) => {
@@ -161,7 +225,7 @@ function getTrayMenuTemplate(): any[] {
       } 
     },
     { type: 'separator' },
-    { label: 'Salir', click: () => {
+    { label: isEs ? 'Salir' : 'Quit', click: () => {
         isQuitting = true;
         app.quit();
       } 
@@ -254,6 +318,14 @@ function createWindow() {
   mainWindow.on('unmaximize', saveWindowState);
   mainWindow.on('hide', saveWindowState);
 
+  // Manejar minimizar (Bandeja de sistema)
+  mainWindow.on('minimize', () => {
+    const minimizeToTray = queryGet('SELECT value FROM settings WHERE key = ?', ['minimize_to_tray']);
+    if (minimizeToTray?.value === 'true') {
+      mainWindow?.hide();
+    }
+  });
+
   // Manejar cierre (Bandeja de sistema)
   mainWindow.on('close', (event) => {
     const closeToTray = queryGet('SELECT value FROM settings WHERE key = ?', ['close_to_tray']);
@@ -298,6 +370,7 @@ function createWindow() {
 
   // Interceptar click derecho para enviar sugerencias de ortografía al frontend
   mainWindow.webContents.on('context-menu', (event, params) => {
+    event.preventDefault();
     mainWindow?.webContents.send('context-menu-data', {
       x: params.x,
       y: params.y,
@@ -329,7 +402,14 @@ function createWindow() {
 // ─── IPC Handlers ──────────────────────────────────────────────────────────
 
 // -- Ventana --
-ipcMain.handle('window-minimize', () => mainWindow?.minimize());
+ipcMain.handle('window-minimize', () => {
+  const minimizeToTray = queryGet('SELECT value FROM settings WHERE key = ?', ['minimize_to_tray']);
+  if (minimizeToTray?.value === 'true') {
+    mainWindow?.hide();
+  } else {
+    mainWindow?.minimize();
+  }
+});
 ipcMain.handle('window-maximize-toggle', () => {
   if (mainWindow?.isMaximized()) mainWindow.unmaximize();
   else mainWindow?.maximize();
@@ -405,8 +485,12 @@ ipcMain.handle('settings:get', (_e: any, key: string) => {
 
 ipcMain.handle('settings:set', (_e: any, key: string, value: string) => {
   runQuery('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', [key, value]);
-  if (key === 'auto_unlock_caps_lock') {
+  if (key === 'auto_unlock_caps_lock' || key === 'language') {
     updateTrayMenu();
+  }
+  if (key === 'caps_lock_sound_scope') {
+    if (value === 'global') startCapsLockWorker();
+    else stopCapsLockWorker();
   }
   return true;
 });
@@ -577,6 +661,11 @@ if (!gotTheLock) {
     await initDatabase();
     createWindow();
     createTray();
+
+    const scopeVal = queryGet('SELECT value FROM settings WHERE key = ?', ['caps_lock_sound_scope']);
+    if (scopeVal?.value === 'global') {
+      startCapsLockWorker();
+    }
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();

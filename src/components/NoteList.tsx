@@ -1,10 +1,12 @@
 import { useRef, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Note, Folder } from '../types';
+import { Language, TRANSLATIONS } from '../languages';
 import { Plus, Trash2, Pin, Search, ArrowUpDown, ChevronDown, LayoutList, StretchHorizontal } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface Props {
+  language: Language;
   notes: Note[];
   folders: Folder[];
   selectedNoteId: string | null;
@@ -18,7 +20,7 @@ interface Props {
   searchQuery: string;
 }
 
-function formatDate(iso: string): string {
+function formatDate(iso: string, language: Language): string {
   const d = new Date(iso);
   const now = new Date();
   
@@ -27,14 +29,16 @@ function formatDate(iso: string): string {
   yesterday.setDate(now.getDate() - 1);
   const isYesterday = d.toDateString() === yesterday.toDateString();
 
-  const timeStr = d.toLocaleTimeString('es-ES', { hour: 'numeric', minute: '2-digit', hour12: true });
+  const isEn = language === 'en';
+  const locale = isEn ? 'en-US' : 'es-ES';
+  const timeStr = d.toLocaleTimeString(locale, { hour: 'numeric', minute: '2-digit', hour12: true });
 
   if (isToday) {
-    return `Hoy, ${timeStr}`;
+    return isEn ? `Today, ${timeStr}` : `Hoy, ${timeStr}`;
   } else if (isYesterday) {
-    return `Ayer, ${timeStr}`;
+    return isEn ? `Yesterday, ${timeStr}` : `Ayer, ${timeStr}`;
   } else {
-    return d.toLocaleDateString('es-ES', { month: 'short', day: 'numeric' }) + `, ${timeStr}`;
+    return d.toLocaleDateString(locale, { month: 'short', day: 'numeric' }) + `, ${timeStr}`;
   }
 }
 
@@ -77,9 +81,10 @@ function extractFirstImage(content: string | null): string | null {
 type ViewMode = 'normal' | 'compact';
 
 export default function NoteList({
-  notes: initialNotes, folders, selectedNoteId, onSelectNote, onCreateNote,
+  language, notes: initialNotes, folders, selectedNoteId, onSelectNote, onCreateNote,
   onDeleteNote, onTogglePin, onMoveNote, onRenameNote, selectedFolder, searchQuery,
 }: Props) {
+  const t = TRANSLATIONS[language];
   const [sortBy, setSortBy] = useState<'updated' | 'created' | 'alpha' | 'alpha-desc'>('updated');
   const [viewMode, setViewMode] = useState<ViewMode>('normal');
   const [showSortMenu, setShowSortMenu] = useState(false);
@@ -130,10 +135,10 @@ export default function NoteList({
   }, [sortedNotes.length]);
 
   const headerTitle = searchQuery
-    ? `Resultados (${initialNotes.length})`
+    ? (language === 'es' ? `Resultados (${initialNotes.length})` : `Results (${initialNotes.length})`)
     : selectedFolder
       ? `${selectedFolder.icon} ${selectedFolder.name}`
-      : 'Todas las notas';
+      : t.sidebar.allNotes;
 
   return (
     <div className="glass-effect notelist-glass" style={{
@@ -172,11 +177,11 @@ export default function NoteList({
           <button
             className="btn btn-primary"
             onClick={onCreateNote}
-            title="Nueva nota (Ctrl+N)"
+            title={language === 'es' ? 'Nueva nota (Ctrl+N)' : 'New note (Ctrl+N)'}
             style={{ padding: '5px 10px', fontSize: 'calc(12px * var(--ui-scale))', gap: 4 }}
           >
             <Plus size={14} />
-            Nueva
+            {language === 'es' ? 'Nueva nota' : 'New note'}
           </button>
         </div>
 
@@ -190,7 +195,11 @@ export default function NoteList({
                 style={{ fontSize: 'calc(11px * var(--ui-scale))', gap: 4, color: 'var(--text-muted)' }}
               >
                 <ArrowUpDown size={12} />
-                {sortBy === 'updated' ? 'Recientes' : sortBy === 'created' ? 'Creadas' : sortBy === 'alpha' ? 'A-Z' : 'Z-A'}
+                {sortBy === 'updated' 
+                  ? (language === 'es' ? 'Recientes' : 'Recent') 
+                  : sortBy === 'created' 
+                    ? (language === 'es' ? 'Creadas' : 'Created') 
+                    : sortBy === 'alpha' ? 'A-Z' : 'Z-A'}
                 <ChevronDown size={10} />
               </button>
               {showSortMenu && (
@@ -203,10 +212,10 @@ export default function NoteList({
                     boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
                   }}>
                     {[
-                      { id: 'updated', label: 'Actualización' },
-                      { id: 'created', label: 'Creación' },
-                      { id: 'alpha', label: 'Alfabético (A-Z)' },
-                      { id: 'alpha-desc', label: 'Alfabético (Z-A)' },
+                      { id: 'updated', label: language === 'es' ? 'Actualización' : 'Modification' },
+                      { id: 'created', label: language === 'es' ? 'Creación' : 'Creation' },
+                      { id: 'alpha', label: language === 'es' ? 'Alfabético (A-Z)' : 'Alphabetical (A-Z)' },
+                      { id: 'alpha-desc', label: language === 'es' ? 'Alfabético (Z-A)' : 'Alphabetical (Z-A)' },
                     ].map(opt => (
                       <button
                         key={opt.id}
@@ -231,7 +240,9 @@ export default function NoteList({
             <button
               onClick={() => setViewMode(viewMode === 'normal' ? 'compact' : 'normal')}
               className="btn-icon"
-              title={viewMode === 'normal' ? 'Cambiar a vista compacta' : 'Cambiar a vista normal'}
+              title={viewMode === 'normal' 
+                ? (language === 'es' ? 'Cambiar a vista compacta' : 'Switch to compact view') 
+                : (language === 'es' ? 'Cambiar a vista normal' : 'Switch to standard view')}
               style={{ padding: 2, color: 'var(--text-muted)' }}
             >
               {viewMode === 'normal' ? <LayoutList size={14} /> : <StretchHorizontal size={14} />}
@@ -239,7 +250,7 @@ export default function NoteList({
           </div>
           
           <span style={{ fontSize: 'calc(12px * var(--ui-scale))', color: 'var(--text-secondary)', fontWeight: 500 }}>
-            {sortedNotes.length} {sortedNotes.length === 1 ? 'nota' : 'notas'}
+            {sortedNotes.length} {sortedNotes.length === 1 ? (language === 'es' ? 'nota' : 'note') : (language === 'es' ? 'notas' : 'notes')}
           </span>
         </div>
       </div>
@@ -263,31 +274,36 @@ export default function NoteList({
                   justifyContent: 'center', flex: 1, minHeight: 200, gap: 12, color: 'var(--text-muted)',
                 }}>
                   {searchQuery
-                    ? <><Search size={32} opacity={0.4} /><span style={{ fontSize: 13 }}>Sin resultados</span></>
-                    : <><span style={{ fontSize: 32, opacity: 0.3 }}>📝</span><span style={{ fontSize: 13 }}>Sin notas aún</span></>
+                    ? <><Search size={32} opacity={0.4} /><span style={{ fontSize: 13 }}>{language === 'es' ? 'No se encontraron resultados' : 'No results found'}</span></>
+                    : <><span style={{ fontSize: 32, opacity: 0.3 }}>📝</span><span style={{ fontSize: 13 }}>{t.noteList.noNotes}</span></>
                   }
                 </div>
               ) : (
-                sortedNotes.map(note => (
-                  <NoteItem
-                    key={note.id}
-                    note={note}
-                    viewMode={viewMode}
-                    isSelected={note.id === selectedNoteId}
-                    onClick={() => onSelectNote(note.id)}
-                    onDelete={() => setNoteToDelete(note)}
-                    onContextMenu={(e) => {
-                    e.preventDefault();
-                    let safeX = e.clientX;
-                    let safeY = e.clientY;
-                    // Evitar desborde por la derecha (menú mide ~140px)
-                    if (safeX + 160 > window.innerWidth) safeX = window.innerWidth - 160;
-                    // Evitar desborde por abajo (menú mide ~250px)
-                    if (safeY + 250 > window.innerHeight) safeY = window.innerHeight - 250;
-                    setContextMenu({ x: safeX, y: safeY, note });
-                  }}
-                />
-              ))
+                sortedNotes.map(note => {
+                  const folder = folders.find(f => f.id === note.folder_id) ?? null;
+                  return (
+                    <NoteItem
+                      key={note.id}
+                      language={language}
+                      note={note}
+                      folder={folder}
+                      viewMode={viewMode}
+                      isSelected={note.id === selectedNoteId}
+                      onClick={() => onSelectNote(note.id)}
+                      onDelete={() => setNoteToDelete(note)}
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        let safeX = e.clientX;
+                        let safeY = e.clientY;
+                        // Evitar desborde por la derecha (menú mide ~140px)
+                        if (safeX + 160 > window.innerWidth) safeX = window.innerWidth - 160;
+                        // Evitar desborde por abajo (menú mide ~250px)
+                        if (safeY + 250 > window.innerHeight) safeY = window.innerHeight - 250;
+                        setContextMenu({ x: safeX, y: safeY, note });
+                      }}
+                    />
+                  );
+                })
             )}
           </motion.div>
         </AnimatePresence>
@@ -299,11 +315,11 @@ export default function NoteList({
           bottom: 12,
           left: '50%',
           transform: 'translateX(-50%)',
-          opacity: isHovering && hiddenCount > 0 ? 1 : 0,
-          visibility: isHovering && hiddenCount > 0 ? 'visible' : 'hidden',
+          opacity: hiddenCount > 0 ? 1 : 0,
+          visibility: hiddenCount > 0 ? 'visible' : 'hidden',
           transition: 'opacity 0.25s, visibility 0.25s',
           zIndex: 10,
-          pointerEvents: isHovering && hiddenCount > 0 ? 'auto' : 'none',
+          pointerEvents: hiddenCount > 0 ? 'auto' : 'none',
         }}>
           <button
             onClick={() => {
@@ -316,29 +332,41 @@ export default function NoteList({
               gap: 6,
               padding: '6px 16px',
               borderRadius: 8,
-              border: '1px solid var(--accent)',
+              border: isHovering ? '1px solid var(--accent)' : '1px solid var(--border)',
               background: 'var(--bg-surface)',
-              color: 'var(--accent-light)',
+              color: isHovering ? 'var(--accent-light)' : 'var(--text-secondary)',
               cursor: 'pointer',
               fontWeight: 600,
               fontSize: 12,
               whiteSpace: 'nowrap',
-              animation: 'cyber-border-pulse 3s ease-in-out infinite',
-              boxShadow: '0 0 4px var(--accent-glow)',
+              animation: isHovering ? 'cyber-border-pulse 3s ease-in-out infinite' : 'none',
+              boxShadow: isHovering ? '0 0 2px var(--accent-glow)' : 'none',
+              transition: 'border-color 0.2s, color 0.2s, box-shadow 0.2s',
             }}
             onMouseDown={(e) => e.preventDefault()}
           >
-            +{hiddenCount} más
+             +{hiddenCount} {language === 'es' ? 'más' : 'more'}
           </button>
         </div>
       </div>
 
       <style>{`
         @keyframes cyber-border-pulse {
-          0%, 100% { border-color: var(--accent); }
-          25%      { border-color: var(--pulse-1); }
-          50%      { border-color: var(--pulse-2); }
-          75%      { border-color: var(--pulse-3); }
+          0%, 100% {
+            border-color: var(--accent);
+            box-shadow: 0 0 5px var(--accent-glow), inset 0 0 2px var(--accent-glow);
+            filter: brightness(1);
+          }
+          33% {
+            border-color: #ff007f;
+            box-shadow: 0 0 9px rgba(255, 0, 127, 0.42), inset 0 0 3px rgba(255, 0, 127, 0.22);
+            filter: brightness(1.1);
+          }
+          66% {
+            border-color: #00f0ff;
+            box-shadow: 0 0 9px rgba(0, 240, 255, 0.42), inset 0 0 3px rgba(0, 240, 255, 0.22);
+            filter: brightness(1.1);
+          }
         }
       `}</style>
 
@@ -369,7 +397,7 @@ export default function NoteList({
             onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'; }}
             onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
           >
-            Abrir nota
+            {language === 'es' ? 'Abrir nota' : 'Open note'}
           </button>
           <button
             onClick={() => { setRenameTarget(contextMenu.note); setRenameInput(contextMenu.note.title); setContextMenu(null); }}
@@ -377,7 +405,7 @@ export default function NoteList({
             onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'; }}
             onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
           >
-            Renombrar
+            {language === 'es' ? 'Renombrar' : 'Rename'}
           </button>
           <button
             onClick={() => onTogglePin(contextMenu.note)}
@@ -385,13 +413,13 @@ export default function NoteList({
             onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'; }}
             onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
           >
-            {contextMenu.note.pinned ? 'Desfijar' : 'Fijar'}
+            {contextMenu.note.pinned ? (language === 'es' ? 'Desfijar' : 'Unpin') : (language === 'es' ? 'Fijar' : 'Pin')}
           </button>
 
           {folders.length > 0 && (
             <>
               <div style={{ height: 1, background: 'var(--border)', margin: '2px 0' }} />
-              <div style={{ padding: '4px 10px', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5 }}>Mover a...</div>
+              <div style={{ padding: '4px 10px', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5 }}>{language === 'es' ? 'Mover a...' : 'Move to...'}</div>
               <div style={{ maxHeight: 150, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 2 }}>
                 <button
                   onClick={() => { onMoveNote(contextMenu.note.id, null); setContextMenu(null); }}
@@ -399,7 +427,7 @@ export default function NoteList({
                   onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'; }}
                   onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
                 >
-                   📄 Todas las notas
+                   📄 {t.sidebar.allNotes}
                 </button>
                 {folders.map(f => (
                   <button
@@ -425,7 +453,7 @@ export default function NoteList({
             onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'; }}
             onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
           >
-            Eliminar
+            {t.general.delete}
           </button>
         </div>,
         document.body
@@ -442,14 +470,14 @@ export default function NoteList({
             width: 400, display: 'flex', flexDirection: 'column', gap: 16, border: '1px solid var(--border)',
             boxShadow: '0 16px 40px rgba(0,0,0,0.4)',
           }} onClick={e => e.stopPropagation()}>
-            <h3 style={{ margin: 0, fontSize: 16, color: 'var(--text-primary)', fontWeight: 600 }}>Renombrar nota</h3>
+            <h3 style={{ margin: 0, fontSize: 16, color: 'var(--text-primary)', fontWeight: 600 }}>{language === 'es' ? 'Renombrar nota' : 'Rename note'}</h3>
             <input
               autoFocus
               type="text"
               value={renameInput}
               onChange={e => setRenameInput(e.target.value)}
               className="input"
-              placeholder="Nombre de la nota"
+              placeholder={language === 'es' ? 'Nombre de la nota' : 'Note name'}
               onKeyDown={e => {
                 if (e.key === 'Enter') {
                   onRenameNote(renameTarget.id, renameInput);
@@ -459,11 +487,11 @@ export default function NoteList({
               }}
             />
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-              <button className="btn btn-ghost" onClick={() => setRenameTarget(null)}>Cancelar</button>
+              <button className="btn btn-ghost" onClick={() => setRenameTarget(null)}>{t.general.cancel}</button>
               <button className="btn btn-primary" onClick={() => {
                 onRenameNote(renameTarget.id, renameInput);
                 setRenameTarget(null);
-              }}>Guardar</button>
+              }}>{t.general.save}</button>
             </div>
           </div>
         </div>,
@@ -501,8 +529,8 @@ export default function NoteList({
                 <Trash2 size={20} />
               </div>
               <div style={{ display: 'flex', flexDirection: 'column' }}>
-                <h3 style={{ margin: 0, fontSize: 16, color: 'var(--text-primary)', fontWeight: 700 }}>¿Eliminar esta nota?</h3>
-                <span style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>Esta acción no se puede deshacer.</span>
+                <h3 style={{ margin: 0, fontSize: 16, color: 'var(--text-primary)', fontWeight: 700 }}>{language === 'es' ? '¿Eliminar esta nota?' : 'Delete this note?'}</h3>
+                <span style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>{language === 'es' ? 'Esta acción no se puede deshacer.' : 'This action cannot be undone.'}</span>
               </div>
             </div>
 
@@ -516,7 +544,7 @@ export default function NoteList({
               fontWeight: 500,
               fontStyle: 'italic',
             }} className="truncate">
-              "{noteToDelete.title || 'Sin título'}"
+              "{noteToDelete.title || t.noteList.unnamedNote}"
             </div>
 
             <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end', marginTop: 8 }}>
@@ -525,7 +553,7 @@ export default function NoteList({
                 onClick={() => setNoteToDelete(null)}
                 style={{ padding: '8px 16px', fontWeight: 600 }}
               >
-                Cancelar
+                {t.general.cancel}
               </button>
               <button 
                 className="btn btn-danger" 
@@ -543,7 +571,7 @@ export default function NoteList({
                   gap: 6
                 }}
               >
-                <Trash2 size={14} /> Eliminar
+                <Trash2 size={14} /> {t.general.delete}
               </button>
             </div>
           </div>
@@ -557,7 +585,9 @@ export default function NoteList({
 // ─── NoteItem subcomponent ─────────────────────────────────────────────────
 
 interface NoteItemProps {
+  language: Language;
   note: Note;
+  folder: Folder | null;
   viewMode: ViewMode;
   isSelected: boolean;
   onClick: () => void;
@@ -565,8 +595,9 @@ interface NoteItemProps {
   onContextMenu: (e: React.MouseEvent) => void;
 }
 
-function NoteItem({ note, viewMode, isSelected, onClick, onDelete, onContextMenu }: NoteItemProps) {
+function NoteItem({ language, note, folder, viewMode, isSelected, onClick, onDelete, onContextMenu }: NoteItemProps) {
   const firstImage = viewMode === 'normal' ? extractFirstImage(note.content) : null;
+  const t = TRANSLATIONS[language];
 
   return (
     <div
@@ -598,7 +629,7 @@ function NoteItem({ note, viewMode, isSelected, onClick, onDelete, onContextMenu
               whiteSpace: 'nowrap',
               flex: 1,
             }}>
-              {note.title || 'Sin título'}
+              {note.title || t.noteList.unnamedNote}
             </span>
           </div>
 
@@ -615,7 +646,7 @@ function NoteItem({ note, viewMode, isSelected, onClick, onDelete, onContextMenu
               marginBottom: 6,
               maxHeight: '2.9em',
             }}>
-              {note.preview || 'Sin contenido'}
+              {note.preview || (language === 'es' ? 'Sin contenido' : 'No content')}
             </p>
           )}
 
@@ -625,9 +656,41 @@ function NoteItem({ note, viewMode, isSelected, onClick, onDelete, onContextMenu
             opacity: 0.9,
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'space-between'
+            justifyContent: 'flex-start',
+            gap: 8,
           }}>
-            <span>{formatDate(note.updated_at)}</span>
+            <span style={{ width: 115, flexShrink: 0 }}>{formatDate(note.updated_at, language)}</span>
+            {folder && (
+              <span style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4,
+                padding: '2px 8px',
+                borderRadius: 12,
+                fontSize: '9px',
+                fontWeight: 700,
+                textTransform: 'uppercase',
+                letterSpacing: '0.03em',
+                color: 'rgba(255, 255, 255, 0.92)',
+                textShadow: folder.color ? `0 0 2px ${folder.color}aa` : 'none',
+                border: folder.color ? `1px solid ${folder.color}66` : '1px solid var(--border)',
+                background: folder.color ? `${folder.color}18` : 'var(--bg-surface)',
+                boxShadow: folder.color ? `0 0 8px ${folder.color}22` : 'none',
+                backdropFilter: 'blur(4px)',
+                maxWidth: 100,
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                transition: 'all 0.2s ease',
+              }}
+                title={language === 'es' ? `Carpeta: ${folder.name}` : `Folder: ${folder.name}`}
+              >
+                <span style={{ fontSize: 10 }}>{folder.icon}</span>
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {folder.name}
+                </span>
+              </span>
+            )}
           </div>
         </div>
 

@@ -9,6 +9,8 @@ import Placeholder from '@tiptap/extension-placeholder';
 import Underline from '@tiptap/extension-underline';
 import Highlight from '@tiptap/extension-highlight';
 import { Note } from '../types';
+import { Language, TRANSLATIONS } from '../languages';
+import { playSynthSound } from '../utils/audio';
 import {
   Bold, Italic, Underline as UnderlineIcon, Strikethrough,
   Heading1, Heading2, List, ListOrdered, Link as LinkIcon,
@@ -18,6 +20,7 @@ import {
 } from 'lucide-react';
 
 interface Props {
+  language: Language;
   note: Note | null;
   onSave: (note: Note) => void;
   onCreateNote: () => void;
@@ -28,6 +31,8 @@ interface Props {
   autoUnlockCapsLock?: boolean;
   autoUnlockCapsLockTimeout?: number;
   onAutoUnlockCapsLockChange?: (v: boolean) => void;
+  capsLockSound?: string;
+  capsLockSoundScope?: string;
   uiScale?: number;
   onScaleChange?: (scale: number) => void;
 }
@@ -91,6 +96,7 @@ const ToolbarBtn = ({
 );
 
 export default function NoteEditor({ 
+  language,
   note, 
   onSave, 
   onCreateNote, 
@@ -101,22 +107,42 @@ export default function NoteEditor({
   autoUnlockCapsLock = false,
   autoUnlockCapsLockTimeout = 8,
   onAutoUnlockCapsLockChange,
+  capsLockSound = 'cyber-beep',
+  capsLockSoundScope = 'app',
   uiScale = 1.0,
   onScaleChange
 }: Props) {
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const currentNoteRef = useRef<Note | null>(note);
   const titleInputRef = useRef<HTMLInputElement | null>(null);
+  const isSelectionChangingRef = useRef(false);
+  const lastContextMenuTargetRef = useRef<'title' | 'editor'>('editor');
+  const lastContextMenuTimeRef = useRef(0);
+  const isDirtyRef = useRef(false);
   // Sincronizar ref con cada render para que scheduleAutoSave siempre tenga la note actual
   const [pinned, setPinned] = useState(note?.pinned === 1);
   const [isRaw, setIsRaw] = useState(false);
-  const [contextMenu, setContextMenu] = useState<{ x: number, y: number, linkHref?: string, suggestions?: string[], misspelledWord?: string } | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ x: number, y: number, linkHref?: string, suggestions?: string[], misspelledWord?: string, target?: 'title' | 'editor' } | null>(null);
   const [editLinkData, setEditLinkData] = useState<{ href: string } | null>(null);
   const [hoveredLink, setHoveredLink] = useState<string | null>(null);
   const [inputContextMenu, setInputContextMenu] = useState<{ x: number, y: number } | null>(null);
   const [lineInfo, setLineInfo] = useState({ line: 1, col: 1, total: 1 });
   const [textMetrics, setTextMetrics] = useState({ words: 0, chars: 0, readingTime: 0 });
   const [localTitle, setLocalTitle] = useState(note?.title || '');
+
+  const updateTitle = (newTitle: string) => {
+    setLocalTitle(newTitle);
+    const current = currentNoteRef.current;
+    if (current) {
+      const updated = { ...current, title: newTitle };
+      currentNoteRef.current = updated;
+      if (autosaveEnabled) {
+        onSave(updated);
+      } else {
+        setHasUnsavedChanges(true);
+      }
+    }
+  };
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [isCapsLockActive, setIsCapsLockActive] = useState(false);
@@ -124,6 +150,7 @@ export default function NoteEditor({
   const [capsToast, setCapsToast] = useState<string | null>(null);
   const toastTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const prevCapsActiveRef = useRef<boolean | null>(null);
+  const prevCapsActiveForSoundRef = useRef<boolean | null>(null);
 
   // 1. Initial check on startup / mount
   useEffect(() => {
@@ -176,13 +203,13 @@ export default function NoteEditor({
 
     if (prevCapsActiveRef.current !== isCapsLockActive) {
       if (isCapsLockActive) {
-        setCapsToast("Bloq Mayús: ACTIVADO ⚠️");
+        setCapsToast(language === 'es' ? "Bloq Mayús: ACTIVADO ⚠️" : "Caps Lock: ON ⚠️");
       } else {
         // If it was auto-unlocked (timeLeft === 0), show a special Auto-desactivado toast
-        if (autoUnlockCapsLock && timeLeft === 0) {
-          setCapsToast("Bloq Mayús: AUTO-DESACTIVADO 💡");
+        if (autoUnlockCapsLock && autoUnlockCapsLockTimeout > 0 && timeLeft === 0) {
+          setCapsToast(language === 'es' ? "Bloq Mayús: AUTO-DESACTIVADO 💡" : "Caps Lock: AUTO-UNLOCKED 💡");
         } else {
-          setCapsToast("Bloq Mayús: DESACTIVADO ✅");
+          setCapsToast(language === 'es' ? "Bloq Mayús: DESACTIVADO ✅" : "Caps Lock: OFF ✅");
         }
       }
 
@@ -193,7 +220,36 @@ export default function NoteEditor({
 
       prevCapsActiveRef.current = isCapsLockActive;
     }
-  }, [isCapsLockActive, autoUnlockCapsLock, timeLeft]);
+  }, [isCapsLockActive, autoUnlockCapsLock, timeLeft, language, autoUnlockCapsLockTimeout]);
+
+  // 3.5 Isolated sound trigger for Caps Lock state changes
+  useEffect(() => {
+    if (prevCapsActiveForSoundRef.current === null) {
+      prevCapsActiveForSoundRef.current = isCapsLockActive;
+      return;
+    }
+
+    if (prevCapsActiveForSoundRef.current !== isCapsLockActive) {
+      if (capsLockSoundScope === 'app' && capsLockSound && capsLockSound !== 'off') {
+        playSynthSound(capsLockSound);
+      }
+      prevCapsActiveForSoundRef.current = isCapsLockActive;
+    }
+  }, [isCapsLockActive, capsLockSound, capsLockSoundScope]);
+
+  // 3.7 Global sound trigger for Caps Lock state changes (from background worker)
+  useEffect(() => {
+    if (capsLockSoundScope !== 'global') return;
+
+    if (window.cyberNotesAPI && window.cyberNotesAPI.onGlobalCapsLockChanged) {
+      const unsubscribe = window.cyberNotesAPI.onGlobalCapsLockChanged((_active) => {
+        if (capsLockSound && capsLockSound !== 'off') {
+          playSynthSound(capsLockSound);
+        }
+      });
+      return unsubscribe;
+    }
+  }, [capsLockSoundScope, capsLockSound]);
 
   // 4. Isolated cleanup for toast timeout on component unmount
   useEffect(() => {
@@ -215,7 +271,7 @@ export default function NoteEditor({
 
   // 6. Unlock Caps Lock trigger effect when countdown hits 0 (Unconditional visual reset!)
   useEffect(() => {
-    if (autoUnlockCapsLock && isCapsLockActive && timeLeft === 0) {
+    if (autoUnlockCapsLock && autoUnlockCapsLockTimeout > 0 && isCapsLockActive && timeLeft === 0) {
       const triggerUnlock = async () => {
         // Unconditionally clear visual indicators immediately!
         setIsCapsLockActive(false);
@@ -226,7 +282,7 @@ export default function NoteEditor({
       };
       triggerUnlock();
     }
-  }, [autoUnlockCapsLock, isCapsLockActive, timeLeft]);
+  }, [autoUnlockCapsLock, isCapsLockActive, timeLeft, autoUnlockCapsLockTimeout]);
 
   useEffect(() => {
     const closeMenu = () => {
@@ -243,11 +299,10 @@ export default function NoteEditor({
         // Usamos las coordenadas reales del ratón (capturadas globalmente)
         const mousePos = (window as any).lastMousePos || { x: data.x, y: data.y };
         
-        // Filtro inteligente: solo mostrar si el clic fue dentro del editor o el título
-        const targetEl = document.elementFromPoint(mousePos.x, mousePos.y);
-        const isInEditor = targetEl?.closest('.editor-glass') || targetEl?.closest('.title-input');
-        
-        if (!isInEditor) return;
+        const timeDiff = Date.now() - lastContextMenuTimeRef.current;
+        if (timeDiff > 200) {
+          return;
+        }
 
         let safeY = mousePos.y;
         if (safeY + 300 > window.innerHeight) safeY = window.innerHeight - 300;
@@ -257,7 +312,8 @@ export default function NoteEditor({
           y: safeY,
           linkHref: data.linkURL,
           suggestions: data.suggestions || [],
-          misspelledWord: data.misspelledWord || ''
+          misspelledWord: data.misspelledWord || '',
+          target: lastContextMenuTargetRef.current
         });
       });
     }
@@ -267,6 +323,9 @@ export default function NoteEditor({
       if (unregisterContext) unregisterContext();
     };
   }, []);
+
+  // Keep language synchronized on window for tiptap extensions
+  (window as any).__currentLanguage = language;
 
   const editor = useEditor({
     extensions: [
@@ -290,7 +349,7 @@ export default function NoteEditor({
         },
       }),
       Placeholder.configure({
-        placeholder: 'Escribe aquí tu nota...',
+        placeholder: () => TRANSLATIONS[((window as any).__currentLanguage as Language) || 'es'].editor.placeholderBody,
       }),
       Underline,
       Highlight.configure({ multicolor: false }),
@@ -303,7 +362,10 @@ export default function NoteEditor({
     content: '',
     onUpdate: ({ editor }) => {
       const html = editor.getHTML();
-      scheduleAutoSave(html);
+      if (!isSelectionChangingRef.current) {
+        isDirtyRef.current = true;
+        scheduleAutoSave(html);
+      }
       updateLineInfo(editor);
       updateTextMetrics(editor);
     },
@@ -311,11 +373,15 @@ export default function NoteEditor({
       updateLineInfo(editor);
     },
     onBlur: ({ editor }) => {
-      const html = editor.getHTML();
-      const current = currentNoteRef.current;
-      if (!current) return;
-      const preview = extractPreview(html);
-      onSave({ ...current, content: html, preview });
+      if (isDirtyRef.current) {
+        const html = editor.getHTML();
+        const current = currentNoteRef.current;
+        if (current) {
+          const preview = extractPreview(html);
+          onSave({ ...current, content: html, preview });
+          isDirtyRef.current = false;
+        }
+      }
       if (saveTimer.current) {
         clearTimeout(saveTimer.current);
         saveTimer.current = null;
@@ -352,6 +418,7 @@ export default function NoteEditor({
     const preview = extractPreview(html);
     onSave({ ...note, content: html, title: localTitle, preview });
     setHasUnsavedChanges(false);
+    isDirtyRef.current = false;
   }, [editor, note, localTitle, onSave]);
 
   // Sincronizar estado de cambios no guardados con el proceso principal
@@ -366,6 +433,11 @@ export default function NoteEditor({
     setHasUnsavedChanges(false);
 
     if (!editor || !note) return;
+    
+    // Set selection changing flag to true to ignore programmatic updates
+    isSelectionChangingRef.current = true;
+    isDirtyRef.current = false;
+
     if (saveTimer.current) clearTimeout(saveTimer.current);
 
     // Carga inteligente: intenta parsear JSON, si falla carga como HTML
@@ -397,9 +469,15 @@ export default function NoteEditor({
     }
     setIsRaw(false);
 
+    // Reset selection changing flag after all synchronous & immediate asynchronous updates
+    const timeoutId = setTimeout(() => {
+      isSelectionChangingRef.current = false;
+    }, 100);
+
     return () => {
+      clearTimeout(timeoutId);
       // Closure-based safeguard: flush save immediately when note changes or unmounts
-      if (saveTimer.current) {
+      if (saveTimer.current && isDirtyRef.current) {
         clearTimeout(saveTimer.current);
         saveTimer.current = null;
         const current = currentNoteRef.current;
@@ -407,6 +485,7 @@ export default function NoteEditor({
           const html = editor.getHTML();
           const preview = extractPreview(html);
           onSave({ ...current, content: html, preview });
+          isDirtyRef.current = false;
         }
       }
     };
@@ -428,6 +507,7 @@ export default function NoteEditor({
       if (!current) return;
       const preview = extractPreview(html);
       onSave({ ...current, content: html, preview });
+      isDirtyRef.current = false;
     }, 500);
   }, [onSave, autosaveEnabled]);
 
@@ -581,6 +661,8 @@ export default function NoteEditor({
     editor.chain().focus().setImage({ src: url }).run();
   };
 
+  const t = TRANSLATIONS[language];
+
   if (!note) {
     return (
       <div className="glass-effect editor-glass" style={{
@@ -592,12 +674,12 @@ export default function NoteEditor({
           transition={{ repeat: Infinity, duration: 3 }}
           style={{ fontSize: 48, opacity: 0.2 }}
         >✏️</motion.span>
-        <p style={{ fontSize: 15 }}>Selecciona o crea una nota</p>
+        <p style={{ fontSize: 15 }}>{language === 'es' ? 'Selecciona o crea una nota' : 'Select or create a note'}</p>
         <button className="btn btn-primary" onClick={onCreateNote} style={{ gap: 6 }}>
-          <Plus size={15} /> Nueva nota
+          <Plus size={15} /> {language === 'es' ? 'Nueva nota' : 'New note'}
         </button>
         <button className="btn btn-ghost" onClick={onToggleLayout} style={{ gap: 6, marginTop: 12 }}>
-          <PanelLeft size={15} /> Cambiar vista
+          <PanelLeft size={15} /> {language === 'es' ? 'Cambiar vista' : 'Switch view'}
         </button>
       </div>
     );
@@ -608,6 +690,362 @@ export default function NoteEditor({
       className="glass-effect editor-glass"
       style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'var(--bg-editor)', overflow: 'hidden' }}
     >
+      {/* Title Container (Moved from below) */}
+      <div style={{ 
+        padding: '20px 48px 16px', 
+        flexShrink: 0, 
+        borderBottom: '1px solid var(--border)', 
+        background: 'linear-gradient(to bottom, rgba(15, 15, 20, 0.95) 0%, rgba(10, 10, 15, 0.95) 100%)',
+        position: 'relative',
+        boxShadow: '0 4px 15px rgba(0, 0, 0, 0.4)',
+      }}>
+        {/* Top glowing cyber border line */}
+        <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 1, background: 'linear-gradient(90deg, transparent 0%, var(--accent) 50%, transparent 100%)', opacity: 0.6 }} />
+        
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 24 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <input
+              ref={titleInputRef}
+              value={localTitle}
+              onChange={e => updateTitle(e.target.value)}
+              onContextMenu={(e) => {
+                lastContextMenuTargetRef.current = 'title';
+                lastContextMenuTimeRef.current = Date.now();
+                e.stopPropagation();
+              }}
+              placeholder={t.editor.placeholderTitle}
+              className="title-input"
+              style={{
+                width: '100%',
+                fontSize: 'calc(26px * var(--ui-scale))',
+                fontWeight: 700,
+                background: 'rgba(255, 255, 255, 0.02)',
+                border: '1px solid rgba(255, 255, 255, 0.05)',
+                outline: 'none',
+                color: 'var(--text-primary)',
+                marginBottom: 4,
+                letterSpacing: '-0.02em',
+                padding: '8px 16px',
+                borderRadius: 'var(--radius-md)',
+                transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.2)',
+              }}
+              onFocus={e => {
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
+                e.currentTarget.style.borderColor = 'var(--accent)';
+                e.currentTarget.style.boxShadow = '0 0 10px var(--accent-glow), inset 0 1px 3px rgba(0,0,0,0.2)';
+              }}
+              onBlur={e => {
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.02)';
+                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.05)';
+                e.currentTarget.style.boxShadow = 'inset 0 1px 3px rgba(0,0,0,0.2)';
+              }}
+            />
+          </div>
+          
+          {/* Note-Level Actions Toolbar Panel */}
+          <div style={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            gap: 6, 
+            flexShrink: 0,
+            background: 'var(--bg-surface)',
+            border: '1px solid var(--border)',
+            padding: '4px 6px',
+            borderRadius: 'var(--radius-md)',
+            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+          }}>
+            {/* Countdown Timer Badge */}
+            <AnimatePresence>
+              {autoUnlockCapsLock && isCapsLockActive && timeLeft > 0 && (
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.8, x: 5 }}
+                  animate={{ opacity: 1, scale: 1, x: 0 }}
+                  exit={{ opacity: 0, scale: 0.8, x: 5 }}
+                  transition={{ duration: 0.2, ease: 'easeOut' }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    background: 'rgba(255, 255, 255, 0.05)',
+                    border: '1px solid var(--border)',
+                    color: 'var(--text-muted)',
+                    padding: '2px 6px',
+                    borderRadius: 'var(--radius-sm)',
+                    fontSize: 10,
+                    fontWeight: 700,
+                    fontFamily: 'var(--font-mono)',
+                    boxShadow: '0 0 6px rgba(239, 68, 68, 0.2)',
+                    pointerEvents: 'none',
+                    whiteSpace: 'nowrap',
+                    gap: 4,
+                    animation: 'cyber-warning-pulse 1.5s infinite ease-in-out',
+                  }}
+                >
+                  <span>⏱️</span>
+                  <span>
+                    {(() => {
+                      if (timeLeft < 60) return `${timeLeft}s`;
+                      if (timeLeft < 3600) {
+                        const m = Math.floor(timeLeft / 60);
+                        const s = timeLeft % 60;
+                        return `${m}:${s < 10 ? '0' : ''}${s}`;
+                      }
+                      const h = Math.floor(timeLeft / 3600);
+                      const m = Math.floor((timeLeft % 3600) / 60);
+                      return `${h}h ${m}m`;
+                    })()}
+                  </span>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Auto-Unlock CapsLock */}
+            <button 
+              onClick={() => {
+                const nextVal = !autoUnlockCapsLock;
+                onAutoUnlockCapsLockChange?.(nextVal);
+                
+                // Trigger a beautiful floating toast alert
+                setCapsToast(nextVal 
+                  ? (language === 'es' ? "Bloq Mayús Auto-desactivar: ACTIVADO" : "Caps Lock Auto-Unlock: ON")
+                  : (language === 'es' ? "Bloq Mayús Auto-desactivar: DESACTIVADO" : "Caps Lock Auto-Unlock: OFF")
+                );
+                if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+                toastTimeoutRef.current = setTimeout(() => {
+                  setCapsToast(null);
+                }, 2000);
+              }}
+              title={isCapsLockActive 
+                ? (language === 'es' 
+                    ? `Bloq Mayús ACTIVO (Auto-desactivar: ${autoUnlockCapsLock ? 'ENCENDIDO' : 'APAGADO'})` 
+                    : `Caps Lock ACTIVE (Auto-unlock: ${autoUnlockCapsLock ? 'ON' : 'OFF'})`)
+                : (language === 'es' 
+                    ? `Desactivar Bloq Mayús por inactividad (Estado: ${autoUnlockCapsLock ? 'ACTIVO' : 'INACTIVO'})` 
+                    : `Disable Caps Lock on inactivity (Status: ${autoUnlockCapsLock ? 'ACTIVE' : 'INACTIVE'})`)
+              }
+              style={{ 
+                padding: 6,
+                position: 'relative',
+                color: isCapsLockActive 
+                  ? '#ef4444' 
+                  : autoUnlockCapsLock 
+                    ? 'var(--accent-light)' 
+                    : 'var(--text-muted)',
+                background: autoUnlockCapsLock ? 'var(--accent-dim)' : 'transparent',
+                border: (isCapsLockActive && autoUnlockCapsLock)
+                  ? '1px solid rgba(239, 68, 68, 0.4)' 
+                  : '1px solid transparent',
+                borderRadius: 'var(--radius-sm)',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                transition: 'all 0.2s',
+                boxShadow: (isCapsLockActive && autoUnlockCapsLock)
+                  ? '0 0 8px rgba(239, 68, 68, 0.25)' 
+                  : 'none',
+                animation: (isCapsLockActive && autoUnlockCapsLock) 
+                  ? 'cyber-warning-pulse 1.5s infinite ease-in-out' 
+                  : 'none',
+              }}
+              onMouseEnter={e => { 
+                if (!autoUnlockCapsLock && !isCapsLockActive) e.currentTarget.style.color = 'var(--text-primary)'; 
+              }}
+              onMouseLeave={e => { 
+                if (!autoUnlockCapsLock && !isCapsLockActive) e.currentTarget.style.color = 'var(--text-muted)'; 
+              }}
+            >
+              <Keyboard size={14} />
+              
+              {/* Pulsing Red Dot for physical CapsLock active state (Only active when feature is also enabled) */}
+              {isCapsLockActive && autoUnlockCapsLock && (
+                <span style={{
+                  position: 'absolute',
+                  top: 2,
+                  right: 2,
+                  width: 5,
+                  height: 5,
+                  background: '#ef4444',
+                  borderRadius: '50%',
+                  boxShadow: '0 0 6px #ef4444',
+                  animation: 'dot-pulse 1.5s infinite ease-in-out',
+                }} />
+              )}
+            </button>
+
+            <div style={{ width: 1, height: 14, background: 'var(--border)', margin: '0 2px' }} />
+
+            {/* Pin */}
+            <button 
+              onClick={handlePin}
+              title={pinned ? (language === 'es' ? "Desfijar nota" : "Unpin note") : (language === 'es' ? "Fijar nota" : "Pin note")}
+              style={{ 
+                padding: 6,
+                color: pinned ? 'var(--accent-light)' : 'var(--text-muted)',
+                background: pinned ? 'var(--accent-dim)' : 'transparent',
+                border: 'none',
+                borderRadius: 'var(--radius-sm)',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                transition: 'all 0.2s',
+              }}
+              onMouseEnter={e => { if (!pinned) e.currentTarget.style.color = 'var(--text-primary)'; }}
+              onMouseLeave={e => { if (!pinned) e.currentTarget.style.color = 'var(--text-muted)'; }}
+            >
+              <Pin size={14} />
+            </button>
+
+            {/* Vista HTML */}
+            <button 
+              onClick={() => setIsRaw(!isRaw)}
+              title={language === 'es' ? 'Vista HTML (Ver código fuente)' : 'HTML View (Source code)'}
+              style={{ 
+                padding: 6,
+                color: isRaw ? 'var(--accent-light)' : 'var(--text-muted)',
+                background: isRaw ? 'var(--accent-dim)' : 'transparent',
+                border: 'none',
+                borderRadius: 'var(--radius-sm)',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                transition: 'all 0.2s',
+                outline: 'none',
+              }}
+              onMouseEnter={e => { if (!isRaw) e.currentTarget.style.color = 'var(--text-primary)'; }}
+              onMouseLeave={e => { if (!isRaw) e.currentTarget.style.color = 'var(--text-muted)'; }}
+            >
+              <Braces size={14} />
+            </button>
+
+            <div style={{ width: 1, height: 14, background: 'var(--border)', margin: '0 2px' }} />
+
+            {/* Cambiar vista */}
+            <button 
+              onClick={onToggleLayout}
+              title={language === 'es' ? `Cambiar vista (Actual: ${layoutMode} columnas)` : `Change view (Current: ${layoutMode} columns)`}
+              style={{ 
+                padding: 6,
+                color: 'var(--text-muted)',
+                background: 'transparent',
+                border: 'none',
+                borderRadius: 'var(--radius-sm)',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                transition: 'all 0.2s',
+                outline: 'none',
+              }}
+              onMouseEnter={e => e.currentTarget.style.color = 'var(--text-primary)'}
+              onMouseLeave={e => e.currentTarget.style.color = 'var(--text-muted)'}
+            >
+              <PanelLeft size={14} />
+            </button>
+
+            <div style={{ width: 1, height: 14, background: 'var(--border)', margin: '0 2px' }} />
+
+            {/* Exportar nota dropdown trigger */}
+            <div style={{ position: 'relative', display: 'flex' }}>
+              <button 
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowExportMenu(!showExportMenu);
+                }}
+                title={language === 'es' ? 'Exportar nota (.md / .html)' : 'Export note (.md / .html)'}
+                style={{ 
+                  padding: 6,
+                  color: showExportMenu ? 'var(--accent-light)' : 'var(--text-muted)',
+                  background: showExportMenu ? 'var(--accent-dim)' : 'transparent',
+                  border: 'none',
+                  borderRadius: 'var(--radius-sm)',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  transition: 'all 0.2s',
+                  outline: 'none',
+                }}
+                onMouseEnter={e => { if (!showExportMenu) e.currentTarget.style.color = 'var(--text-primary)'; }}
+                onMouseLeave={e => { if (!showExportMenu) e.currentTarget.style.color = 'var(--text-muted)'; }}
+              >
+                <Download size={14} />
+              </button>
+
+              <AnimatePresence>
+                {showExportMenu && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 8, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 8, scale: 0.95 }}
+                    transition={{ duration: 0.15 }}
+                    style={{
+                      position: 'absolute',
+                      top: '100%',
+                      right: 0,
+                      marginTop: 6,
+                      background: 'var(--bg-modal)',
+                      border: '1px solid var(--border)',
+                      borderRadius: 'var(--radius-md)',
+                      boxShadow: '0 10px 25px rgba(0,0,0,0.3)',
+                      zIndex: 100,
+                      minWidth: 180,
+                      overflow: 'hidden',
+                      padding: 4,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 2,
+                    }}
+                    className="glass-effect"
+                  >
+                    <button
+                      onClick={handleExportMarkdown}
+                      style={{
+                        padding: '8px 12px',
+                        fontSize: 12,
+                        textAlign: 'left',
+                        background: 'transparent',
+                        color: 'var(--text-primary)',
+                        border: 'none',
+                        borderRadius: 4,
+                        cursor: 'pointer',
+                        fontFamily: 'inherit',
+                        transition: 'background 0.2s',
+                      }}
+                      onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
+                      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                    >
+                      {language === 'es' ? '📝 Exportar como Markdown (.md)' : '📝 Export as Markdown (.md)'}
+                    </button>
+                    <button
+                      onClick={handleExportHtml}
+                      style={{
+                        padding: '8px 12px',
+                        fontSize: 12,
+                        textAlign: 'left',
+                        background: 'transparent',
+                        color: 'var(--text-primary)',
+                        border: 'none',
+                        borderRadius: 4,
+                        cursor: 'pointer',
+                        fontFamily: 'inherit',
+                        transition: 'background 0.2s',
+                      }}
+                      onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
+                      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                    >
+                      {language === 'es' ? '🌐 Exportar como HTML (.html)' : '🌐 Export as HTML (.html)'}
+                    </button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          </div>
+        </div>
+      </div>
+                {/* Toolbar Container (Original lines 693-771) */}
       <div style={{
         display: 'flex', flexDirection: 'column', borderBottom: '1px solid var(--border)',
         flexShrink: 0, background: 'var(--bg-notelist)',
@@ -615,32 +1053,32 @@ export default function NoteEditor({
         <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '8px 12px', flexWrap: 'wrap' }}>
           {editor && (
             <>
-              <ToolbarBtn onClick={() => editor.chain().focus().undo().run()} disabled={!editor.can().undo()} title="Deshacer (Ctrl+Z)"><Undo size={15} /></ToolbarBtn>
-              <ToolbarBtn onClick={() => editor.chain().focus().redo().run()} disabled={!editor.can().redo()} title="Rehacer (Ctrl+Y)"><Redo size={15} /></ToolbarBtn>
+              <ToolbarBtn onClick={() => editor.chain().focus().undo().run()} disabled={!editor.can().undo()} title={language === 'es' ? 'Deshacer (Ctrl+Z)' : 'Undo (Ctrl+Z)'}><Undo size={15} /></ToolbarBtn>
+              <ToolbarBtn onClick={() => editor.chain().focus().redo().run()} disabled={!editor.can().redo()} title={language === 'es' ? 'Rehacer (Ctrl+Y)' : 'Redo (Ctrl+Y)'}><Redo size={15} /></ToolbarBtn>
               
               <div style={{ width: 1, height: 18, background: 'var(--border)', margin: '0 4px' }} />
 
-              <ToolbarBtn onClick={() => editor.chain().focus().toggleBold().run()} active={editor.isActive('bold')} title="Negrita"><Bold size={15} /></ToolbarBtn>
-              <ToolbarBtn onClick={() => editor.chain().focus().toggleItalic().run()} active={editor.isActive('italic')} title="Cursiva"><Italic size={15} /></ToolbarBtn>
-              <ToolbarBtn onClick={() => editor.chain().focus().toggleUnderline().run()} active={editor.isActive('underline')} title="Subrayado"><UnderlineIcon size={15} /></ToolbarBtn>
-              <ToolbarBtn onClick={() => editor.chain().focus().toggleStrike().run()} active={editor.isActive('strike')} title="Tachado"><Strikethrough size={15} /></ToolbarBtn>
-              <ToolbarBtn onClick={() => editor.chain().focus().toggleHighlight().run()} active={editor.isActive('highlight')} title="Resaltar"><Highlighter size={15} /></ToolbarBtn>
+              <ToolbarBtn onClick={() => editor.chain().focus().toggleBold().run()} active={editor.isActive('bold')} title={language === 'es' ? 'Negrita' : 'Bold'}><Bold size={15} /></ToolbarBtn>
+              <ToolbarBtn onClick={() => editor.chain().focus().toggleItalic().run()} active={editor.isActive('italic')} title={language === 'es' ? 'Cursiva' : 'Italic'}><Italic size={15} /></ToolbarBtn>
+              <ToolbarBtn onClick={() => editor.chain().focus().toggleUnderline().run()} active={editor.isActive('underline')} title={language === 'es' ? 'Subrayado' : 'Underline'}><UnderlineIcon size={15} /></ToolbarBtn>
+              <ToolbarBtn onClick={() => editor.chain().focus().toggleStrike().run()} active={editor.isActive('strike')} title={language === 'es' ? 'Tachado' : 'Strikethrough'}><Strikethrough size={15} /></ToolbarBtn>
+              <ToolbarBtn onClick={() => editor.chain().focus().toggleHighlight().run()} active={editor.isActive('highlight')} title={language === 'es' ? 'Resaltar' : 'Highlight'}><Highlighter size={15} /></ToolbarBtn>
               
               <div style={{ width: 1, height: 18, background: 'var(--border)', margin: '0 4px' }} />
               
-              <ToolbarBtn onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()} active={editor.isActive('heading', { level: 1 })} title="Título 1"><Heading1 size={15} /></ToolbarBtn>
-              <ToolbarBtn onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()} active={editor.isActive('heading', { level: 2 })} title="Título 2"><Heading2 size={15} /></ToolbarBtn>
+              <ToolbarBtn onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()} active={editor.isActive('heading', { level: 1 })} title={language === 'es' ? 'Título 1' : 'Heading 1'}><Heading1 size={15} /></ToolbarBtn>
+              <ToolbarBtn onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()} active={editor.isActive('heading', { level: 2 })} title={language === 'es' ? 'Título 2' : 'Heading 2'}><Heading2 size={15} /></ToolbarBtn>
               
               <div style={{ width: 1, height: 18, background: 'var(--border)', margin: '0 4px' }} />
               
-              <ToolbarBtn onClick={() => editor.chain().focus().toggleBulletList().run()} active={editor.isActive('bulletList')} title="Lista"><List size={15} /></ToolbarBtn>
-              <ToolbarBtn onClick={() => editor.chain().focus().toggleOrderedList().run()} active={editor.isActive('orderedList')} title="Lista numerada"><ListOrdered size={15} /></ToolbarBtn>
-              <ToolbarBtn onClick={() => editor.chain().focus().toggleBlockquote().run()} active={editor.isActive('blockquote')} title="Cita"><Quote size={15} /></ToolbarBtn>
+              <ToolbarBtn onClick={() => editor.chain().focus().toggleBulletList().run()} active={editor.isActive('bulletList')} title={language === 'es' ? 'Lista' : 'Bullet List'}><List size={15} /></ToolbarBtn>
+              <ToolbarBtn onClick={() => editor.chain().focus().toggleOrderedList().run()} active={editor.isActive('orderedList')} title={language === 'es' ? 'Lista numerada' : 'Numbered List'}><ListOrdered size={15} /></ToolbarBtn>
+              <ToolbarBtn onClick={() => editor.chain().focus().toggleBlockquote().run()} active={editor.isActive('blockquote')} title={language === 'es' ? 'Cita' : 'Blockquote'}><Quote size={15} /></ToolbarBtn>
               
               <div style={{ width: 1, height: 18, background: 'var(--border)', margin: '0 4px' }} />
               
-              <ToolbarBtn onClick={handleSetLink} active={editor.isActive('link')} title="Insertar link"><LinkIcon size={15} /></ToolbarBtn>
-              <ToolbarBtn onClick={handleInsertImage} title="Insertar imagen"><ImageIcon size={15} /></ToolbarBtn>
+              <ToolbarBtn onClick={handleSetLink} active={editor.isActive('link')} title={language === 'es' ? 'Insertar link' : 'Insert Link'}><LinkIcon size={15} /></ToolbarBtn>
+              <ToolbarBtn onClick={handleInsertImage} title={language === 'es' ? 'Insertar imagen' : 'Insert Image'}><ImageIcon size={15} /></ToolbarBtn>
               
               <div style={{ flex: 1 }} />
             </>
@@ -658,11 +1096,11 @@ export default function NoteEditor({
                 display: 'flex', alignItems: 'center', gap: 12, padding: '8px 16px', overflow: 'hidden',
               }}
             >
-              <span style={{ fontSize: 10, fontWeight: 800, color: 'var(--accent)', textTransform: 'uppercase' }}>Imagen:</span>
+              <span style={{ fontSize: 10, fontWeight: 800, color: 'var(--accent)', textTransform: 'uppercase' }}>{language === 'es' ? 'Imagen:' : 'Image:'}</span>
               <div style={{ display: 'flex', gap: 4 }}>
-                <ToolbarBtn onClick={() => editor.chain().focus().updateAttributes('image', { align: 'left' }).run()} active={editor.getAttributes('image').align === 'left'} title="Izquierda"><AlignLeft size={14} /></ToolbarBtn>
-                <ToolbarBtn onClick={() => editor.chain().focus().updateAttributes('image', { align: 'center' }).run()} active={editor.getAttributes('image').align === 'center'} title="Centro"><AlignCenter size={14} /></ToolbarBtn>
-                <ToolbarBtn onClick={() => editor.chain().focus().updateAttributes('image', { align: 'right' }).run()} active={editor.getAttributes('image').align === 'right'} title="Derecha"><AlignRight size={14} /></ToolbarBtn>
+                <ToolbarBtn onClick={() => editor.chain().focus().updateAttributes('image', { align: 'left' }).run()} active={editor.getAttributes('image').align === 'left'} title={language === 'es' ? 'Izquierda' : 'Left'}><AlignLeft size={14} /></ToolbarBtn>
+                <ToolbarBtn onClick={() => editor.chain().focus().updateAttributes('image', { align: 'center' }).run()} active={editor.getAttributes('image').align === 'center'} title={language === 'es' ? 'Centro' : 'Center'}><AlignCenter size={14} /></ToolbarBtn>
+                <ToolbarBtn onClick={() => editor.chain().focus().updateAttributes('image', { align: 'right' }).run()} active={editor.getAttributes('image').align === 'right'} title={language === 'es' ? 'Derecha' : 'Right'}><AlignRight size={14} /></ToolbarBtn>
               </div>
               <div style={{ width: 1, height: 14, background: 'var(--border)', margin: '0 4px' }} />
               <div style={{ display: 'flex', gap: 4 }}>
@@ -688,387 +1126,16 @@ export default function NoteEditor({
         </AnimatePresence>
       </div>
 
+      {/* Editor Content Container (Scrolling) */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
-        <div style={{ padding: '32px 48px 0', flexShrink: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 24 }}>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <input
-                ref={titleInputRef}
-                value={localTitle}
-                onChange={e => {
-                  setLocalTitle(e.target.value);
-                  const current = currentNoteRef.current;
-                  if (current) {
-                    const updated = { ...current, title: e.target.value };
-                    currentNoteRef.current = updated;
-                    if (autosaveEnabled) {
-                      onSave(updated);
-                    } else {
-                      setHasUnsavedChanges(true);
-                    }
-                  }
-                }}
-                className="title-input"
-                style={{
-                  width: '100%',
-                  fontSize: 'calc(32px * var(--ui-scale))',
-                  fontWeight: 700,
-                  background: 'transparent',
-                  border: 'none', outline: 'none', color: 'var(--text-primary)', marginBottom: 8, letterSpacing: '-0.03em',
-                }}
-              />
-            </div>
-            
-            {/* Note-Level Actions Toolbar Panel */}
-            <div style={{ 
-              display: 'flex', 
-              alignItems: 'center', 
-              gap: 6, 
-              flexShrink: 0,
-              background: 'var(--bg-surface)',
-              border: '1px solid var(--border)',
-              padding: '4px 6px',
-              borderRadius: 'var(--radius-md)',
-              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
-              marginTop: 4,
-            }}>
-              {/* Custom Keyboard/CapsLock Auto-Unlocker Toggle Button */}
-              <style>{`
-                @keyframes cyber-warning-pulse {
-                  0% { border-color: rgba(239, 68, 68, 0.3); box-shadow: 0 0 4px rgba(239, 68, 68, 0.1); }
-                  50% { border-color: rgba(239, 68, 68, 0.8); box-shadow: 0 0 10px rgba(239, 68, 68, 0.35); }
-                  100% { border-color: rgba(239, 68, 68, 0.3); box-shadow: 0 0 4px rgba(239, 68, 68, 0.1); }
-                }
-                @keyframes dot-pulse {
-                  0% { transform: scale(0.85); opacity: 0.5; }
-                  50% { transform: scale(1.15); opacity: 1; }
-                  100% { transform: scale(0.85); opacity: 0.5; }
-                }
-              `}</style>
-              {/* Countdown Timer Badge */}
-              <AnimatePresence>
-                {autoUnlockCapsLock && isCapsLockActive && timeLeft > 0 && (
-                  <motion.div
-                    initial={{ opacity: 0, scale: 0.8, x: 5 }}
-                    animate={{ opacity: 1, scale: 1, x: 0 }}
-                    exit={{ opacity: 0, scale: 0.8, x: 5 }}
-                    transition={{ duration: 0.2, ease: 'easeOut' }}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      background: 'rgba(239, 68, 68, 0.12)',
-                      border: '1px solid rgba(239, 68, 68, 0.4)',
-                      color: '#ef4444',
-                      padding: '2px 6px',
-                      borderRadius: 'var(--radius-sm)',
-                      fontSize: 10,
-                      fontWeight: 700,
-                      fontFamily: 'var(--font-mono)',
-                      boxShadow: '0 0 6px rgba(239, 68, 68, 0.2)',
-                      pointerEvents: 'none',
-                      whiteSpace: 'nowrap',
-                      gap: 4,
-                      animation: 'cyber-warning-pulse 1.5s infinite ease-in-out',
-                    }}
-                  >
-                    <span>⏱️</span>
-                    <span>
-                      {(() => {
-                        if (timeLeft < 60) return `${timeLeft}s`;
-                        if (timeLeft < 3600) {
-                          const m = Math.floor(timeLeft / 60);
-                          const s = timeLeft % 60;
-                          return `${m}:${s < 10 ? '0' : ''}${s}`;
-                        }
-                        const h = Math.floor(timeLeft / 3600);
-                        const m = Math.floor((timeLeft % 3600) / 60);
-                        return `${h}h ${m}m`;
-                      })()}
-                    </span>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-
-              <button 
-                onClick={() => {
-                  const nextVal = !autoUnlockCapsLock;
-                  onAutoUnlockCapsLockChange?.(nextVal);
-                  
-                  // Trigger a beautiful floating toast alert
-                  setCapsToast(nextVal 
-                    ? "Bloq Mayús Auto-desactivar: ACTIVADO" 
-                    : "Bloq Mayús Auto-desactivar: DESACTIVADO"
-                  );
-                  if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
-                  toastTimeoutRef.current = setTimeout(() => {
-                    setCapsToast(null);
-                  }, 2000);
-                }}
-                title={isCapsLockActive 
-                  ? `Bloq Mayús ACTIVO (Auto-desactivar: ${autoUnlockCapsLock ? 'ENCENDIDO' : 'APAGADO'})`
-                  : `Desactivar Bloq Mayús por inactividad (Estado: ${autoUnlockCapsLock ? 'ACTIVO' : 'INACTIVO'})`
-                }
-                style={{ 
-                  padding: 6,
-                  position: 'relative',
-                  color: isCapsLockActive 
-                    ? '#ef4444' 
-                    : autoUnlockCapsLock 
-                      ? 'var(--accent-light)' 
-                      : 'var(--text-muted)',
-                  background: autoUnlockCapsLock ? 'var(--accent-dim)' : 'transparent',
-                  border: (isCapsLockActive && autoUnlockCapsLock)
-                    ? '1px solid rgba(239, 68, 68, 0.4)' 
-                    : '1px solid transparent',
-                  borderRadius: 'var(--radius-sm)',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  transition: 'all 0.2s',
-                  boxShadow: (isCapsLockActive && autoUnlockCapsLock)
-                    ? '0 0 8px rgba(239, 68, 68, 0.25)' 
-                    : 'none',
-                  animation: (isCapsLockActive && autoUnlockCapsLock) 
-                    ? 'cyber-warning-pulse 1.5s infinite ease-in-out' 
-                    : 'none',
-                }}
-                onMouseEnter={e => { 
-                  if (!autoUnlockCapsLock && !isCapsLockActive) e.currentTarget.style.color = 'var(--text-primary)'; 
-                }}
-                onMouseLeave={e => { 
-                  if (!autoUnlockCapsLock && !isCapsLockActive) e.currentTarget.style.color = 'var(--text-muted)'; 
-                }}
-              >
-                <Keyboard size={14} />
-                
-                {/* Pulsing Red Dot for physical CapsLock active state (Only active when feature is also enabled) */}
-                {isCapsLockActive && autoUnlockCapsLock && (
-                  <span style={{
-                    position: 'absolute',
-                    top: 2,
-                    right: 2,
-                    width: 5,
-                    height: 5,
-                    background: '#ef4444',
-                    borderRadius: '50%',
-                    boxShadow: '0 0 6px #ef4444',
-                    animation: 'dot-pulse 1.5s infinite ease-in-out',
-                  }} />
-                )}
-              </button>
-
-              {/* Pin */}
-              <button 
-                onClick={handlePin}
-                title={pinned ? "Desfijar nota" : "Fijar nota"}
-                style={{ 
-                  padding: 6,
-                  color: pinned ? 'var(--accent-light)' : 'var(--text-muted)',
-                  background: pinned ? 'var(--accent-dim)' : 'transparent',
-                  border: 'none',
-                  borderRadius: 'var(--radius-sm)',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  transition: 'all 0.2s',
-                }}
-                onMouseEnter={e => { if (!pinned) e.currentTarget.style.color = 'var(--text-primary)'; }}
-                onMouseLeave={e => { if (!pinned) e.currentTarget.style.color = 'var(--text-muted)'; }}
-              >
-                <Pin size={14} />
-              </button>
-
-              {/* Vista HTML */}
-              <button 
-                onClick={() => setIsRaw(!isRaw)}
-                title="Vista HTML (Ver código fuente)"
-                style={{ 
-                  padding: 6,
-                  color: isRaw ? 'var(--accent-light)' : 'var(--text-muted)',
-                  background: isRaw ? 'var(--accent-dim)' : 'transparent',
-                  border: 'none',
-                  borderRadius: 'var(--radius-sm)',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  transition: 'all 0.2s',
-                }}
-                onMouseEnter={e => { if (!isRaw) e.currentTarget.style.color = 'var(--text-primary)'; }}
-                onMouseLeave={e => { if (!isRaw) e.currentTarget.style.color = 'var(--text-muted)'; }}
-              >
-                <Braces size={14} />
-              </button>
-
-              <div style={{ width: 1, height: 14, background: 'var(--border)', margin: '0 2px' }} />
-
-              {/* Cambiar vista */}
-              <button 
-                onClick={onToggleLayout}
-                title={`Cambiar vista (Actual: ${layoutMode} columnas)`}
-                style={{ 
-                  padding: 6,
-                  color: 'var(--text-muted)',
-                  background: 'transparent',
-                  border: 'none',
-                  borderRadius: 'var(--radius-sm)',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  transition: 'all 0.2s',
-                }}
-                onMouseEnter={e => e.currentTarget.style.color = 'var(--text-primary)'}
-                onMouseLeave={e => e.currentTarget.style.color = 'var(--text-muted)'}
-              >
-                <PanelLeft size={14} />
-              </button>
-
-              <div style={{ width: 1, height: 14, background: 'var(--border)', margin: '0 2px' }} />
-
-              {/* Exportar nota dropdown trigger */}
-              <div style={{ position: 'relative', display: 'flex' }}>
-                <button 
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setShowExportMenu(!showExportMenu);
-                  }}
-                  title="Exportar nota (.md / .html)"
-                  style={{ 
-                    padding: 6,
-                    color: showExportMenu ? 'var(--accent-light)' : 'var(--text-muted)',
-                    background: showExportMenu ? 'var(--accent-dim)' : 'transparent',
-                    border: 'none',
-                    borderRadius: 'var(--radius-sm)',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    transition: 'all 0.2s',
-                  }}
-                  onMouseEnter={e => { if (!showExportMenu) e.currentTarget.style.color = 'var(--text-primary)'; }}
-                  onMouseLeave={e => { if (!showExportMenu) e.currentTarget.style.color = 'var(--text-muted)'; }}
-                >
-                  <Download size={14} />
-                </button>
-
-                <AnimatePresence>
-                  {showExportMenu && (
-                    <motion.div
-                      initial={{ opacity: 0, y: 8, scale: 0.95 }}
-                      animate={{ opacity: 1, y: 0, scale: 1 }}
-                      exit={{ opacity: 0, y: 8, scale: 0.95 }}
-                      transition={{ duration: 0.15 }}
-                      style={{
-                        position: 'absolute',
-                        top: '100%',
-                        right: 0,
-                        marginTop: 6,
-                        background: 'var(--bg-modal)',
-                        border: '1px solid var(--border)',
-                        borderRadius: 'var(--radius-md)',
-                        boxShadow: '0 10px 25px rgba(0,0,0,0.3)',
-                        zIndex: 100,
-                        minWidth: 180,
-                        overflow: 'hidden',
-                        padding: 4,
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: 2,
-                      }}
-                      className="glass-effect"
-                    >
-                      <button
-                        onClick={handleExportMarkdown}
-                        style={{
-                          padding: '8px 12px',
-                          fontSize: 12,
-                          textAlign: 'left',
-                          background: 'transparent',
-                          color: 'var(--text-primary)',
-                          border: 'none',
-                          borderRadius: 4,
-                          cursor: 'pointer',
-                          fontFamily: 'inherit',
-                          transition: 'background 0.2s',
-                        }}
-                        onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
-                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                      >
-                        📝 Exportar como Markdown (.md)
-                      </button>
-                      <button
-                        onClick={handleExportHtml}
-                        style={{
-                          padding: '8px 12px',
-                          fontSize: 12,
-                          textAlign: 'left',
-                          background: 'transparent',
-                          color: 'var(--text-primary)',
-                          border: 'none',
-                          borderRadius: 4,
-                          cursor: 'pointer',
-                          fontFamily: 'inherit',
-                          transition: 'background 0.2s',
-                        }}
-                        onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
-                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                      >
-                        🌐 Exportar como HTML (.html)
-                      </button>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
-            </div>
-          </div>
-
-          <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 16, opacity: 0.85, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div style={{ display: 'flex', gap: 12 }}>
-              <span>Creada: {new Date(note.created_at).toLocaleDateString()}</span>
-              <span>•</span>
-              <span>Editada: {new Date(note.updated_at).toLocaleTimeString()}</span>
-            </div>
-
-            {/* Manual Save status block inside the metadata row on the right */}
-            {!autosaveEnabled && hasUnsavedChanges && (
-              <motion.button
-                onClick={handleManualSave}
-                title="Guardar cambios pendientes"
-                initial={{ scale: 0, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                exit={{ scale: 0, opacity: 0 }}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  padding: '4px 12px',
-                  borderRadius: 6,
-                  border: '1px solid var(--accent)',
-                  background: 'var(--accent-dim)',
-                  color: 'var(--accent-light)',
-                  cursor: 'pointer',
-                  fontWeight: 600,
-                  fontSize: 11,
-                  boxShadow: '0 0 8px var(--accent-glow)',
-                  animation: 'cyber-border-pulse 3s ease-in-out infinite',
-                }}
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onMouseDown={(e) => e.preventDefault()}
-              >
-                <Save size={12} />
-                <span>Guardar</span>
-              </motion.button>
-            )}
-          </div>
-        </div>
 
         <div 
           className={showLineCounter ? 'show-line-numbers' : ''}
           style={{ position: 'relative', cursor: 'text', flex: '1 0 auto', display: 'flex', flexDirection: 'column' }}
+          onContextMenu={() => {
+            lastContextMenuTargetRef.current = 'editor';
+            lastContextMenuTimeRef.current = Date.now();
+          }}
           onClick={(e) => {
             if (editor && e.target === e.currentTarget) {
               editor.commands.focus('end');
@@ -1148,11 +1215,11 @@ export default function NoteEditor({
       }}>
         {/* Global UI Scale Text Size Controller */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--text-muted)' }}>
-          <span style={{ fontSize: 9, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.8, opacity: 0.85, marginRight: 2 }}>Escala:</span>
+          <span style={{ fontSize: 9, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.8, opacity: 0.85, marginRight: 2 }}>{language === 'es' ? 'Escala:' : 'Scale:'}</span>
           
           <button 
             onClick={() => onScaleChange?.(Math.max(0.8, parseFloat((uiScale - 0.05).toFixed(2))))}
-            title="Reducir tamaño de interfaz (5%)"
+            title={language === 'es' ? 'Reducir tamaño de interfaz (5%)' : 'Reduce interface scale (5%)'}
             style={{
               background: 'transparent',
               border: 'none',
@@ -1194,7 +1261,7 @@ export default function NoteEditor({
 
           <button 
             onClick={() => onScaleChange?.(Math.min(1.5, parseFloat((uiScale + 0.05).toFixed(2))))}
-            title="Aumentar tamaño de interfaz (5%)"
+            title={language === 'es' ? 'Aumentar tamaño de interfaz (5%)' : 'Increase interface scale (5%)'}
             style={{
               background: 'transparent',
               border: 'none',
@@ -1226,15 +1293,15 @@ export default function NoteEditor({
               <div style={{ display: 'flex', gap: 10 }}>
                 <span>LN {lineInfo.line}</span>
                 <span>COL {lineInfo.col}</span>
-                <span>TOTAL {lineInfo.total} LN</span>
+                <span>TOTAL {lineInfo.total} {language === 'es' ? 'LN' : 'LNS'}</span>
               </div>
               <span style={{ opacity: 0.3, fontWeight: 300 }}>|</span>
             </>
           )}
           <div style={{ display: 'flex', gap: 10 }}>
-            <span>{textMetrics.words} PALABRAS</span>
-            <span>{textMetrics.chars} CARS</span>
-            <span style={{ color: 'var(--accent-light)', fontWeight: 600 }}>{textMetrics.readingTime} {textMetrics.readingTime === 1 ? 'MIN' : 'MINS'} LEER</span>
+            <span>{textMetrics.words} {language === 'es' ? 'PALABRAS' : 'WORDS'}</span>
+            <span>{textMetrics.chars} {language === 'es' ? 'CARS' : 'CHARS'}</span>
+            <span style={{ color: 'var(--accent-light)', fontWeight: 600 }}>{textMetrics.readingTime} {textMetrics.readingTime === 1 ? (language === 'es' ? 'MIN' : 'MIN') : (language === 'es' ? 'MINS' : 'MINS')} {language === 'es' ? 'LEER' : 'READ'}</span>
           </div>
         </div>
       </div>
@@ -1291,7 +1358,9 @@ export default function NoteEditor({
                 style={{ textAlign: 'left', padding: '6px 10px', fontSize: 13, background: 'transparent', color: 'var(--success)', border: 'none', borderRadius: 4, cursor: 'pointer' }}
                 onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'; }}
                 onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
-              >Agregar "{contextMenu.misspelledWord}" al diccionario</button>
+              >
+                {language === 'es' ? `Agregar "${contextMenu.misspelledWord}" al diccionario` : `Add "${contextMenu.misspelledWord}" to dictionary`}
+              </button>
               <div style={{ height: 1, background: 'var(--border)', margin: '4px 0' }} />
             </>
           )}
@@ -1303,7 +1372,9 @@ export default function NoteEditor({
                 style={{ textAlign: 'left', padding: '6px 10px', fontSize: 13, background: 'transparent', color: 'var(--accent-light)', border: 'none', borderRadius: 4, cursor: 'pointer', fontWeight: 600 }}
                 onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'; }}
                 onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
-              >Abrir en navegador</button>
+              >
+                {language === 'es' ? 'Abrir en navegador' : 'Open in browser'}
+              </button>
               
               <button
                 onClick={() => { 
@@ -1313,25 +1384,50 @@ export default function NoteEditor({
                 style={{ textAlign: 'left', padding: '6px 10px', fontSize: 13, background: 'transparent', color: 'var(--text-primary)', border: 'none', borderRadius: 4, cursor: 'pointer' }}
                 onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'; }}
                 onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
-              >Editar enlace</button>
+              >
+                {language === 'es' ? 'Editar enlace' : 'Edit link'}
+              </button>
               <div style={{ height: 1, background: 'var(--border)', margin: '4px 0' }} />
             </>
           )}
 
           <button
-            onClick={() => { editor.chain().focus().undo().run(); setContextMenu(null); }}
-            disabled={!editor.can().undo()}
-            style={{ textAlign: 'left', padding: '6px 10px', fontSize: 13, background: 'transparent', color: editor.can().undo() ? 'var(--text-primary)' : 'var(--text-muted)', border: 'none', borderRadius: 4, cursor: editor.can().undo() ? 'pointer' : 'default', opacity: editor.can().undo() ? 1 : 0.5 }}
-            onMouseEnter={e => { if (editor.can().undo()) (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'; }}
+            onClick={() => {
+              console.warn('Undo clicked. contextMenu:', contextMenu);
+              if (contextMenu && contextMenu.target === 'title') {
+                console.warn('Target is title. Focusing title input.');
+                titleInputRef.current?.focus();
+                document.execCommand('undo');
+              } else {
+                console.warn('Target is editor. Executing editor undo.');
+                editor.chain().focus().undo().run();
+              }
+              setContextMenu(null);
+            }}
+            disabled={contextMenu && contextMenu.target === 'title' ? false : !editor.can().undo()}
+            style={{ textAlign: 'left', padding: '6px 10px', fontSize: 13, background: 'transparent', color: (contextMenu && contextMenu.target === 'title') || editor.can().undo() ? 'var(--text-primary)' : 'var(--text-muted)', border: 'none', borderRadius: 4, cursor: (contextMenu && contextMenu.target === 'title') || editor.can().undo() ? 'pointer' : 'default', opacity: (contextMenu && contextMenu.target === 'title') || editor.can().undo() ? 1 : 0.5 }}
+            onMouseEnter={e => { if ((contextMenu && contextMenu.target === 'title') || editor.can().undo()) (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'; }}
             onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
-          >Deshacer</button>
+          >
+            {language === 'es' ? 'Deshacer' : 'Undo'}
+          </button>
           <button
-            onClick={() => { editor.chain().focus().redo().run(); setContextMenu(null); }}
-            disabled={!editor.can().redo()}
-            style={{ textAlign: 'left', padding: '6px 10px', fontSize: 13, background: 'transparent', color: editor.can().redo() ? 'var(--text-primary)' : 'var(--text-muted)', border: 'none', borderRadius: 4, cursor: editor.can().redo() ? 'pointer' : 'default', opacity: editor.can().redo() ? 1 : 0.5 }}
-            onMouseEnter={e => { if (editor.can().redo()) (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'; }}
+            onClick={() => {
+              if (contextMenu && contextMenu.target === 'title') {
+                titleInputRef.current?.focus();
+                document.execCommand('redo');
+              } else {
+                editor.chain().focus().redo().run();
+              }
+              setContextMenu(null);
+            }}
+            disabled={contextMenu && contextMenu.target === 'title' ? false : !editor.can().redo()}
+            style={{ textAlign: 'left', padding: '6px 10px', fontSize: 13, background: 'transparent', color: (contextMenu && contextMenu.target === 'title') || editor.can().redo() ? 'var(--text-primary)' : 'var(--text-muted)', border: 'none', borderRadius: 4, cursor: (contextMenu && contextMenu.target === 'title') || editor.can().redo() ? 'pointer' : 'default', opacity: (contextMenu && contextMenu.target === 'title') || editor.can().redo() ? 1 : 0.5 }}
+            onMouseEnter={e => { if ((contextMenu && contextMenu.target === 'title') || editor.can().redo()) (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'; }}
             onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
-          >Rehacer</button>
+          >
+            {language === 'es' ? 'Rehacer' : 'Redo'}
+          </button>
           
           <div style={{ height: 1, background: 'var(--border)', margin: '4px 0' }} />
 
@@ -1340,19 +1436,36 @@ export default function NoteEditor({
             style={{ textAlign: 'left', padding: '6px 10px', fontSize: 13, background: 'transparent', color: 'var(--text-primary)', border: 'none', borderRadius: 4, cursor: 'pointer' }}
             onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'; }}
             onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
-          >Cortar</button>
+          >
+            {language === 'es' ? 'Cortar' : 'Cut'}
+          </button>
           <button
             onClick={() => { document.execCommand('copy'); setContextMenu(null); }}
             style={{ textAlign: 'left', padding: '6px 10px', fontSize: 13, background: 'transparent', color: 'var(--text-primary)', border: 'none', borderRadius: 4, cursor: 'pointer' }}
             onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'; }}
             onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
-          >Copiar</button>
+          >
+            {language === 'es' ? 'Copiar' : 'Copy'}
+          </button>
           <button
             onClick={() => {
               navigator.clipboard.readText().then(text => {
-                editor.chain().focus().insertContent(text).run();
+                if (contextMenu && contextMenu.target === 'title') {
+                  const input = titleInputRef.current;
+                  if (input) {
+                    const start = input.selectionStart || 0;
+                    const end = input.selectionEnd || 0;
+                    const val = input.value;
+                    const newVal = val.slice(0, start) + text + val.slice(end);
+                    updateTitle(newVal);
+                    setTimeout(() => {
+                      input.setSelectionRange(start + text.length, start + text.length);
+                    }, 0);
+                  }
+                } else {
+                  editor.chain().focus().insertContent(text).run();
+                }
               }).catch(() => {
-                // Fallback para pegar
                 document.execCommand('paste');
               });
               setContextMenu(null);
@@ -1360,21 +1473,51 @@ export default function NoteEditor({
             style={{ textAlign: 'left', padding: '6px 10px', fontSize: 13, background: 'transparent', color: 'var(--text-primary)', border: 'none', borderRadius: 4, cursor: 'pointer' }}
             onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'; }}
             onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
-          >Pegar</button>
+          >
+            {language === 'es' ? 'Pegar' : 'Paste'}
+          </button>
           
           <button
-            onClick={() => { editor.chain().focus().selectAll().run(); setContextMenu(null); }}
+            onClick={() => {
+              if (contextMenu && contextMenu.target === 'title') {
+                titleInputRef.current?.select();
+              } else {
+                editor.chain().focus().selectAll().run();
+              }
+              setContextMenu(null);
+            }}
             style={{ textAlign: 'left', padding: '6px 10px', fontSize: 13, background: 'transparent', color: 'var(--text-primary)', border: 'none', borderRadius: 4, cursor: 'pointer' }}
             onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'; }}
             onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
-          >Seleccionar todo</button>
+          >
+            {language === 'es' ? 'Seleccionar todo' : 'Select all'}
+          </button>
           
           <button
-            onClick={() => { editor.chain().focus().deleteSelection().run(); setContextMenu(null); }}
+            onClick={() => {
+              if (contextMenu && contextMenu.target === 'title') {
+                const input = titleInputRef.current;
+                if (input) {
+                  const start = input.selectionStart || 0;
+                  const end = input.selectionEnd || 0;
+                  const val = input.value;
+                  const newVal = val.slice(0, start) + val.slice(end);
+                  updateTitle(newVal);
+                  setTimeout(() => {
+                    input.setSelectionRange(start, start);
+                  }, 0);
+                }
+              } else {
+                editor.chain().focus().deleteSelection().run();
+              }
+              setContextMenu(null);
+            }}
             style={{ textAlign: 'left', padding: '6px 10px', fontSize: 13, background: 'transparent', color: 'var(--danger)', border: 'none', borderRadius: 4, cursor: 'pointer' }}
             onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'var(--danger-dim)'; }}
             onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
-          >Eliminar</button>
+          >
+            {t.general.delete}
+          </button>
 
           <div style={{ height: 1, background: 'var(--border)', margin: '4px 0' }} />
           
@@ -1383,19 +1526,25 @@ export default function NoteEditor({
             style={{ textAlign: 'left', padding: '6px 10px', fontSize: 13, fontWeight: 'bold', background: 'transparent', color: 'var(--text-primary)', border: 'none', borderRadius: 4, cursor: 'pointer' }}
             onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'; }}
             onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
-          >Negrita</button>
+          >
+            {language === 'es' ? 'Negrita' : 'Bold'}
+          </button>
           <button
             onClick={() => { editor.chain().focus().toggleItalic().run(); setContextMenu(null); }}
             style={{ textAlign: 'left', padding: '6px 10px', fontSize: 13, fontStyle: 'italic', background: 'transparent', color: 'var(--text-primary)', border: 'none', borderRadius: 4, cursor: 'pointer' }}
             onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'; }}
             onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
-          >Cursiva</button>
+          >
+            {language === 'es' ? 'Cursiva' : 'Italic'}
+          </button>
           <button
             onClick={() => { editor.chain().focus().toggleUnderline().run(); setContextMenu(null); }}
             style={{ textAlign: 'left', padding: '6px 10px', fontSize: 13, textDecoration: 'underline', background: 'transparent', color: 'var(--text-primary)', border: 'none', borderRadius: 4, cursor: 'pointer' }}
             onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'; }}
             onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
-          >Subrayado</button>
+          >
+            {language === 'es' ? 'Subrayado' : 'Underline'}
+          </button>
 
           <div style={{ height: 1, background: 'var(--border)', margin: '4px 0' }} />
           
@@ -1404,7 +1553,9 @@ export default function NoteEditor({
             style={{ textAlign: 'left', padding: '6px 10px', fontSize: 13, color: 'var(--text-muted)', background: 'transparent', border: 'none', borderRadius: 4, cursor: 'pointer' }}
             onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'; }}
             onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
-          >Limpiar formato</button>
+          >
+            {language === 'es' ? 'Limpiar formato' : 'Clear formatting'}
+          </button>
         </div>,
         document.body
       )}
@@ -1420,7 +1571,7 @@ export default function NoteEditor({
             width: 400, display: 'flex', flexDirection: 'column', gap: 16, border: '1px solid var(--border)',
             boxShadow: '0 16px 40px rgba(0,0,0,0.4)',
           }} onClick={e => e.stopPropagation()}>
-            <h3 style={{ margin: 0, fontSize: 16, color: 'var(--text-primary)', fontWeight: 600 }}>Editar enlace</h3>
+            <h3 style={{ margin: 0, fontSize: 16, color: 'var(--text-primary)', fontWeight: 600 }}>{language === 'es' ? 'Editar enlace' : 'Edit link'}</h3>
             <input
               autoFocus
               type="url"
@@ -1449,7 +1600,7 @@ export default function NoteEditor({
               }}
             />
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-              <button className="btn btn-ghost" onClick={() => setEditLinkData(null)}>Cancelar</button>
+              <button className="btn btn-ghost" onClick={() => setEditLinkData(null)}>{t.general.cancel}</button>
               <button className="btn btn-primary" onClick={() => {
                  if (editLinkData.href === '') {
                    editor.chain().focus().extendMarkRange('link').unsetLink().run();
@@ -1461,7 +1612,7 @@ export default function NoteEditor({
                    }
                  }
                  setEditLinkData(null);
-              }}>Guardar</button>
+              }}>{t.general.save}</button>
             </div>
             
             {inputContextMenu && (
@@ -1485,13 +1636,13 @@ export default function NoteEditor({
                   style={{ textAlign: 'left', padding: '6px 10px', fontSize: 13, background: 'transparent', color: 'var(--text-primary)', border: 'none', borderRadius: 4, cursor: 'pointer' }}
                   onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'; }}
                   onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
-                >Cortar</button>
+                >{language === 'es' ? 'Cortar' : 'Cut'}</button>
                 <button
                   onClick={() => { document.execCommand('copy'); setInputContextMenu(null); }}
                   style={{ textAlign: 'left', padding: '6px 10px', fontSize: 13, background: 'transparent', color: 'var(--text-primary)', border: 'none', borderRadius: 4, cursor: 'pointer' }}
                   onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'; }}
                   onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
-                >Copiar</button>
+                >{language === 'es' ? 'Copiar' : 'Copy'}</button>
                 <button
                   onClick={() => {
                     navigator.clipboard.readText().then(text => {
@@ -1502,13 +1653,13 @@ export default function NoteEditor({
                   style={{ textAlign: 'left', padding: '6px 10px', fontSize: 13, background: 'transparent', color: 'var(--text-primary)', border: 'none', borderRadius: 4, cursor: 'pointer' }}
                   onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'; }}
                   onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
-                >Pegar y Reemplazar</button>
+                >{language === 'es' ? 'Pegar y Reemplazar' : 'Paste & Replace'}</button>
                 <button
                   onClick={() => { setEditLinkData({ href: '' }); setInputContextMenu(null); }}
                   style={{ textAlign: 'left', padding: '6px 10px', fontSize: 13, background: 'transparent', color: 'var(--text-muted)', border: 'none', borderRadius: 4, cursor: 'pointer' }}
                   onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'; }}
                   onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
-                >Limpiar campo</button>
+                >{language === 'es' ? 'Limpiar campo' : 'Clear field'}</button>
               </div>
             )}
           </div>
@@ -1554,10 +1705,21 @@ export default function NoteEditor({
           caret-color: var(--text-primary) !important;
         }
         @keyframes cyber-border-pulse {
-          0%, 100% { border-color: var(--accent); }
-          25%      { border-color: var(--pulse-1); }
-          50%      { border-color: var(--pulse-2); }
-          75%      { border-color: var(--pulse-3); }
+          0%, 100% {
+            border-color: var(--accent);
+            box-shadow: 0 0 10px var(--accent-glow), inset 0 0 4px var(--accent-glow);
+            filter: brightness(1);
+          }
+          33% {
+            border-color: #ff007f;
+            box-shadow: 0 0 18px rgba(255, 0, 127, 0.85), inset 0 0 6px rgba(255, 0, 127, 0.45);
+            filter: brightness(1.2);
+          }
+          66% {
+            border-color: #00f0ff;
+            box-shadow: 0 0 18px rgba(0, 240, 255, 0.85), inset 0 0 6px rgba(0, 240, 255, 0.45);
+            filter: brightness(1.2);
+          }
         }
       `}</style>
     </div>

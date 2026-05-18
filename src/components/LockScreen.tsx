@@ -1,11 +1,15 @@
 import { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Lock, Eye, EyeOff, Shield, Minus, Square, X } from 'lucide-react';
+import { Language, TRANSLATIONS } from '../languages';
 
 interface Props {
+  language: Language;
   onUnlock: () => void;
 }
 
-export default function LockScreen({ onUnlock }: Props) {
+export default function LockScreen({ language, onUnlock }: Props) {
+  const t = TRANSLATIONS[language];
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
@@ -13,9 +17,16 @@ export default function LockScreen({ onUnlock }: Props) {
   const [shaking, setShaking] = useState(false);
   const [hasPassword, setHasPassword] = useState(true);
   const inputRef = useRef<HTMLInputElement>(null);
+  const [contextMenu, setContextMenu] = useState<{ x: number, y: number } | null>(null);
 
   useEffect(() => {
     window.cyberNotesAPI.hasPassword().then(setHasPassword);
+  }, []);
+
+  useEffect(() => {
+    const closeMenu = () => setContextMenu(null);
+    document.addEventListener('click', closeMenu);
+    return () => document.removeEventListener('click', closeMenu);
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -30,7 +41,7 @@ export default function LockScreen({ onUnlock }: Props) {
       if (ok) {
         onUnlock();
       } else {
-        setError('Contraseña incorrecta');
+        setError(t.lockScreen.incorrectPassword);
         setShaking(true);
         setPassword('');
         setTimeout(() => {
@@ -39,7 +50,7 @@ export default function LockScreen({ onUnlock }: Props) {
         }, 400);
       }
     } catch (err) {
-      setError('Error al verificar contraseña');
+      setError(t.lockScreen.verifyError);
     } finally {
       setLoading(false);
     }
@@ -101,7 +112,7 @@ export default function LockScreen({ onUnlock }: Props) {
           <button
             className="btn-icon"
             onClick={() => window.cyberNotesAPI.windowMinimize()}
-            title="Minimizar"
+            title={language === 'es' ? 'Minimizar' : 'Minimize'}
             style={{ width: 26, height: 26 }}
           >
             <Minus size={12} />
@@ -109,7 +120,7 @@ export default function LockScreen({ onUnlock }: Props) {
           <button
             className="btn-icon"
             onClick={() => window.cyberNotesAPI.windowMaximizeToggle()}
-            title="Maximizar/Restaurar"
+            title={language === 'es' ? 'Maximizar/Restaurar' : 'Maximize/Restore'}
             style={{ width: 26, height: 26 }}
           >
             <Square size={11} />
@@ -117,7 +128,7 @@ export default function LockScreen({ onUnlock }: Props) {
           <button
             className="btn-icon"
             onClick={() => window.cyberNotesAPI.windowClose()}
-            title="Cerrar"
+            title={language === 'es' ? 'Cerrar' : 'Close'}
             style={{ width: 26, height: 26, color: 'var(--text-muted)' }}
             onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = 'var(--danger)'; }}
             onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)'; }}
@@ -152,8 +163,8 @@ export default function LockScreen({ onUnlock }: Props) {
             </h1>
             <p style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 4 }}>
               {hasPassword 
-                ? 'Ingresa tu contraseña para continuar'
-                : 'No has configurado una contraseña aún'}
+                ? t.lockScreen.enterPassword
+                : t.lockScreen.noPassword}
             </p>
           </div>
         </div>
@@ -167,7 +178,11 @@ export default function LockScreen({ onUnlock }: Props) {
                 type={showPassword ? 'text' : 'password'}
                 value={password}
                 onChange={e => setPassword(e.target.value)}
-                placeholder="Contraseña"
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  setContextMenu({ x: e.clientX, y: e.clientY });
+                }}
+                placeholder={t.lockScreen.placeholderPassword}
                 autoFocus
                 className="input"
                 style={{ paddingRight: 40, fontSize: 15 }}
@@ -212,16 +227,89 @@ export default function LockScreen({ onUnlock }: Props) {
             style={{ width: '100%', padding: '10px', fontSize: 14, fontWeight: 600 }}
           >
             {loading ? (
-              <span style={{ opacity: 0.7 }}>Verificando...</span>
+              <span style={{ opacity: 0.7 }}>{t.lockScreen.verifying}</span>
             ) : (
               <>
                 <Lock size={15} />
-                {hasPassword ? 'Desbloquear' : 'Entrar'}
+                {hasPassword ? t.lockScreen.unlock : t.lockScreen.enter}
               </>
             )}
           </button>
         </form>
       </div>
+
+      {contextMenu && createPortal(
+        <div 
+          className="glass-effect"
+          style={{
+            position: 'fixed',
+            left: contextMenu.x,
+            top: contextMenu.y,
+            background: 'var(--bg-modal)',
+            border: '1px solid var(--border)',
+            borderRadius: 'var(--radius-sm)',
+            padding: 6,
+            zIndex: 100000,
+            boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
+            minWidth: 140,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 2,
+          }}
+          onClick={e => e.stopPropagation()}
+        >
+          <button
+            onClick={() => {
+              navigator.clipboard.readText().then(text => {
+                const input = inputRef.current;
+                if (input) {
+                  const start = input.selectionStart || 0;
+                  const end = input.selectionEnd || 0;
+                  const val = input.value;
+                  const newVal = val.slice(0, start) + text + val.slice(end);
+                  setPassword(newVal);
+                  setTimeout(() => {
+                    input.setSelectionRange(start + text.length, start + text.length);
+                  }, 0);
+                }
+              }).catch(() => {
+                document.execCommand('paste');
+              });
+              setContextMenu(null);
+            }}
+            style={{ textAlign: 'left', padding: '6px 10px', fontSize: 13, background: 'transparent', color: 'var(--text-primary)', border: 'none', borderRadius: 4, cursor: 'pointer' }}
+            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'; }}
+            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+          >
+            {language === 'es' ? 'Pegar' : 'Paste'}
+          </button>
+          
+          <button
+            onClick={() => {
+              inputRef.current?.select();
+              setContextMenu(null);
+            }}
+            style={{ textAlign: 'left', padding: '6px 10px', fontSize: 13, background: 'transparent', color: 'var(--text-primary)', border: 'none', borderRadius: 4, cursor: 'pointer' }}
+            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'; }}
+            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+          >
+            {language === 'es' ? 'Seleccionar todo' : 'Select all'}
+          </button>
+          
+          <button
+            onClick={() => {
+              setPassword('');
+              setContextMenu(null);
+            }}
+            style={{ textAlign: 'left', padding: '6px 10px', fontSize: 13, background: 'transparent', color: 'var(--danger)', border: 'none', borderRadius: 4, cursor: 'pointer' }}
+            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'var(--danger-dim)'; }}
+            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+          >
+            {language === 'es' ? 'Borrar' : 'Delete'}
+          </button>
+        </div>,
+        document.body
+      )}
     </div>
   );
 }
