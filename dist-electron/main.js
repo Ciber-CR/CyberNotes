@@ -1,32 +1,32 @@
-import { app as c, ipcMain as a, shell as N, session as D, dialog as L, BrowserWindow as I, Tray as H, Menu as j } from "electron";
+import { app as c, ipcMain as a, shell as N, session as D, dialog as L, BrowserWindow as I, Tray as H, Menu as W } from "electron";
 import d from "path";
 import E from "fs";
-import { fileURLToPath as W } from "url";
-import { createRequire as z } from "module";
-import { exec as x, spawn as B } from "child_process";
-const g = d.dirname(W(import.meta.url)), v = z(import.meta.url), w = !c.isPackaged;
+import { fileURLToPath as j } from "url";
+import { createRequire as B } from "module";
+import { exec as x, spawn as z } from "child_process";
+const g = d.dirname(j(import.meta.url)), v = B(import.meta.url), _ = !c.isPackaged;
 let y = d.join(g, "..", "public", "icon.png");
-w || (y = d.join(c.getAppPath(), "dist", "icon.png"));
+_ || (y = d.join(c.getAppPath(), "dist", "icon.png"));
 if (!E.existsSync(y)) {
-  const s = d.join(w ? d.join(g, "..", "public") : d.join(c.getAppPath(), "dist"), "icon.ico");
+  const s = d.join(_ ? d.join(g, "..", "public") : d.join(c.getAppPath(), "dist"), "icon.ico");
   E.existsSync(s) && (y = s);
 }
 const P = v("bcryptjs"), A = c.getPath("userData"), T = d.join(A, "cybernotes.db"), C = d.join(A, "images"), { v4: q } = v("uuid");
-let f = null, _ = null;
+let f = null, w = null;
 function M() {
   if (!f) return;
   const s = f.export();
   E.writeFileSync(T, Buffer.from(s));
 }
 async function X() {
-  const s = w ? d.join(g, "..", "node_modules", "sql.js", "dist", "sql-wasm.wasm") : d.join(process.resourcesPath, "sql-wasm.wasm");
-  if (_ = await v("sql.js")({
+  const s = _ ? d.join(g, "..", "node_modules", "sql.js", "dist", "sql-wasm.wasm") : d.join(process.resourcesPath, "sql-wasm.wasm");
+  if (w = await v("sql.js")({
     locateFile: () => s
   }), E.existsSync(T)) {
     const n = E.readFileSync(T);
-    f = new _.Database(n);
+    f = new w.Database(n);
   } else
-    f = new _.Database();
+    f = new w.Database();
   f.run(`
     CREATE TABLE IF NOT EXISTS settings (
       key   TEXT PRIMARY KEY,
@@ -54,7 +54,7 @@ async function X() {
     );
   `), M(), E.existsSync(C) || E.mkdirSync(C, { recursive: !0 });
 }
-function S(s, e = []) {
+function h(s, e = []) {
   if (!f) throw new Error("Base de datos no inicializada");
   const n = f.prepare(s);
   n.bind(e);
@@ -64,16 +64,16 @@ function S(s, e = []) {
   return n.free(), o;
 }
 function u(s, e = []) {
-  const n = S(s, e);
+  const n = h(s, e);
   return n.length > 0 ? n[0] : null;
 }
 function l(s, e = []) {
   if (!f) throw new Error("Base de datos no inicializada");
   f.run(s, e), M();
 }
-let t = null, p = null, k = !1, O = !1, h = null;
+let t = null, p = null, k = !1, O = !1, S = null;
 function U() {
-  if (h || process.platform !== "win32") return;
+  if (S || process.platform !== "win32") return;
   const s = `
     Add-Type -AssemblyName System.Windows.Forms;
     $lastState = [System.Windows.Forms.Control]::IsKeyLocked('CapsLock')
@@ -88,7 +88,7 @@ function U() {
     }
   `;
   try {
-    h = B("powershell", ["-Command", s]), h.stdout.on("data", (e) => {
+    S = z("powershell", ["-Command", s]), S.stdout.on("data", (e) => {
       const o = e.toString().split(`
 `);
       for (const r of o)
@@ -96,15 +96,15 @@ function U() {
           const i = r.trim().substring(6).toLowerCase() === "true";
           t && !t.isDestroyed() && t.webContents.send("global-caps-lock-changed", i);
         }
-    }), h.on("exit", () => {
-      h = null;
+    }), S.on("exit", () => {
+      S = null;
     });
   } catch (e) {
     console.error("Failed to start caps lock worker:", e);
   }
 }
 function $() {
-  h && (h.kill(), h = null);
+  S && (S.kill(), S = null);
 }
 function m() {
   if (!t) return;
@@ -144,7 +144,7 @@ function K() {
 function b() {
   if (!(!p || p.isDestroyed()))
     try {
-      const s = j.buildFromTemplate(K());
+      const s = W.buildFromTemplate(K());
       p.setContextMenu(s);
     } catch (s) {
       console.error("Failed to update tray menu:", s);
@@ -221,7 +221,7 @@ function F() {
       misspelledWord: i.misspelledWord,
       linkURL: i.linkURL
     });
-  }), w ? t.loadURL("http://localhost:5173") : t.loadFile(d.join(g, "../dist/index.html")), t.once("ready-to-show", () => {
+  }), _ ? t.loadURL("http://localhost:5173") : t.loadFile(d.join(g, "../dist/index.html")), t.once("ready-to-show", () => {
     process.argv.includes("--hidden") || ((e == null ? void 0 : e.value) === "true" && (t == null || t.maximize()), t.show(), t.focus());
   });
 }
@@ -280,7 +280,7 @@ a.handle("settings:setAutoStart", (s, e) => (c.setLoginItemSettings({
   // Windows / Linux
 }), l("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", ["auto_start", e ? "true" : "false"]), !0));
 a.handle("settings:getAutoStart", () => c.getLoginItemSettings().openAtLogin);
-a.handle("folders:getAll", () => S("SELECT * FROM folders ORDER BY name COLLATE NOCASE ASC"));
+a.handle("folders:getAll", () => h("SELECT * FROM folders ORDER BY name COLLATE NOCASE ASC"));
 a.handle("folders:create", (s, e) => (l(
   "INSERT INTO folders (id, name, icon, color, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?)",
   [e.id, e.name, e.icon, e.color, e.sort_order, e.created_at]
@@ -290,8 +290,8 @@ a.handle("folders:update", (s, e) => (l(
   [e.name, e.icon, e.color, e.sort_order, e.id]
 ), !0));
 a.handle("folders:delete", (s, e) => (l("DELETE FROM notes WHERE folder_id = ?", [e]), l("DELETE FROM folders WHERE id = ?", [e]), !0));
-a.handle("notes:getAll", () => S("SELECT * FROM notes ORDER BY pinned DESC, updated_at DESC"));
-a.handle("notes:getByFolder", (s, e) => e ? S("SELECT * FROM notes WHERE folder_id = ? ORDER BY pinned DESC, updated_at DESC", [e]) : S("SELECT * FROM notes ORDER BY pinned DESC, updated_at DESC"));
+a.handle("notes:getAll", () => h("SELECT * FROM notes ORDER BY pinned DESC, updated_at DESC"));
+a.handle("notes:getByFolder", (s, e) => e === "floating" ? h('SELECT * FROM notes WHERE folder_id IS NULL OR folder_id = "" ORDER BY pinned DESC, updated_at DESC') : e ? h("SELECT * FROM notes WHERE folder_id = ? ORDER BY pinned DESC, updated_at DESC", [e]) : h("SELECT * FROM notes ORDER BY pinned DESC, updated_at DESC"));
 a.handle("notes:save", (s, e) => (u("SELECT id FROM notes WHERE id = ?", [e.id]) ? l(
   "UPDATE notes SET folder_id = ?, title = ?, content = ?, preview = ?, pinned = ?, updated_at = ? WHERE id = ?",
   [e.folder_id, e.title, e.content, e.preview, e.pinned, e.updated_at, e.id]
@@ -302,7 +302,7 @@ a.handle("notes:save", (s, e) => (u("SELECT id FROM notes WHERE id = ?", [e.id])
 a.handle("notes:delete", (s, e) => (l("DELETE FROM notes WHERE id = ?", [e]), !0));
 a.handle("notes:search", (s, e) => {
   const n = `%${e}%`;
-  return S(
+  return h(
     "SELECT * FROM notes WHERE title LIKE ? OR preview LIKE ? OR content LIKE ? ORDER BY pinned DESC, updated_at DESC",
     [n, n, n]
   );
@@ -324,7 +324,7 @@ a.handle("data:export", async () => {
     filters: [{ name: "JSON", extensions: ["json"] }]
   });
   if (s.canceled || !s.filePath) return !1;
-  const e = S("SELECT * FROM folders"), n = S("SELECT * FROM notes"), o = { folders: e, notes: n, version: 1 };
+  const e = h("SELECT * FROM folders"), n = h("SELECT * FROM notes"), o = { folders: e, notes: n, version: 1 };
   return E.writeFileSync(s.filePath, JSON.stringify(o, null, 2)), !0;
 });
 a.handle("data:import", async () => {

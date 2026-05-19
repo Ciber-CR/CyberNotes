@@ -175,10 +175,10 @@ export default function NoteList({
             {headerTitle}
           </h2>
           <button
-            className="btn btn-primary"
+            className="new-note-btn"
             onClick={onCreateNote}
             title={language === 'es' ? 'Nueva nota (Ctrl+N)' : 'New note (Ctrl+N)'}
-            style={{ padding: '5px 10px', fontSize: 'calc(12px * var(--ui-scale))', gap: 4 }}
+            style={{ fontSize: 'calc(12px * var(--ui-scale))' }}
           >
             <Plus size={14} />
             {language === 'es' ? 'Nueva nota' : 'New note'}
@@ -600,23 +600,44 @@ function NoteItem({ language, note, folder, viewMode, isSelected, onClick, onDel
   const t = TRANSLATIONS[language];
 
   return (
-    <div
+    <motion.div
       onClick={onClick}
       onContextMenu={onContextMenu}
       draggable={true}
-      onDragStart={e => e.dataTransfer.setData('text/plain', note.id)}
+      onDragStart={e => (e as any).dataTransfer.setData('text/plain', note.id)}
+      whileHover="hover"
+      whileTap="tap"
+      initial={{ opacity: 0, y: 6 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -6 }}
+      transition={{ duration: 0.2 }}
       style={{
         padding: viewMode === 'compact' ? '10px 14px' : '12px 14px',
-        borderBottom: '1px solid var(--border)',
-        background: isSelected ? 'var(--bg-active)' : 'transparent',
+        margin: '6px 12px',
+        borderRadius: 'var(--radius-md)',
+        background: isSelected ? 'var(--bg-active)' : 'rgba(255,255,255,0.01)',
         cursor: 'pointer',
         position: 'relative',
-        transition: 'background var(--transition)',
-        borderLeft: isSelected ? '3px solid var(--accent)' : '3px solid transparent',
+        transition: 'background var(--transition), border-color var(--transition)',
+        border: isSelected ? '1px solid var(--accent)' : '1px solid var(--border)',
+        boxShadow: isSelected ? '0 4px 14px var(--accent-glow), inset 0 1px 0 rgba(255,255,255,0.02)' : 'inset 0 1px 0 rgba(255,255,255,0.01)',
+      }}
+      variants={{
+        hover: {
+          scale: 1.015,
+          background: isSelected ? 'var(--bg-active)' : 'var(--bg-hover)',
+          borderColor: isSelected ? 'var(--accent)' : 'rgba(255, 255, 255, 0.12)',
+          boxShadow: isSelected ? '0 6px 18px var(--accent-glow), inset 0 1px 0 rgba(255,255,255,0.03)' : '0 4px 12px rgba(0,0,0,0.15), inset 0 1px 0 rgba(255,255,255,0.02)',
+          transition: { type: 'spring', stiffness: 400, damping: 20 }
+        },
+        tap: {
+          scale: 0.985,
+          transition: { duration: 0.1 }
+        }
       }}
       className="note-item"
     >
-      <div style={{ display: 'flex', gap: 12, alignItems: 'center', justifyContent: 'space-between' }}>
+      <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', justifyContent: 'space-between' }}>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: viewMode === 'compact' ? 2 : 4 }}>
             {note.pinned === 1 && <Pin size={11} color="var(--accent)" style={{ flexShrink: 0 }} />}
@@ -643,55 +664,12 @@ function NoteItem({ language, note, folder, viewMode, isSelected, onClick, onDel
               WebkitLineClamp: 2,
               WebkitBoxOrient: 'vertical',
               lineHeight: 1.45,
-              marginBottom: 6,
+              marginBottom: 0,
               maxHeight: '2.9em',
             }}>
               {note.preview || (language === 'es' ? 'Sin contenido' : 'No content')}
             </p>
           )}
-
-          <div style={{ 
-            fontSize: 'calc(10.5px * var(--ui-scale))', 
-            color: 'var(--text-secondary)', 
-            opacity: 0.9,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'flex-start',
-            gap: 8,
-          }}>
-            <span style={{ width: 115, flexShrink: 0 }}>{formatDate(note.updated_at, language)}</span>
-            {folder && (
-              <span style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 4,
-                padding: '2px 8px',
-                borderRadius: 12,
-                fontSize: '9px',
-                fontWeight: 700,
-                textTransform: 'uppercase',
-                letterSpacing: '0.03em',
-                color: 'rgba(255, 255, 255, 0.92)',
-                textShadow: folder.color ? `0 0 2px ${folder.color}aa` : 'none',
-                border: folder.color ? `1px solid ${folder.color}66` : '1px solid var(--border)',
-                background: folder.color ? `${folder.color}18` : 'var(--bg-surface)',
-                boxShadow: folder.color ? `0 0 8px ${folder.color}22` : 'none',
-                backdropFilter: 'blur(4px)',
-                maxWidth: 100,
-                whiteSpace: 'nowrap',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                transition: 'all 0.2s ease',
-              }}
-                title={language === 'es' ? `Carpeta: ${folder.name}` : `Folder: ${folder.name}`}
-              >
-                <span style={{ fontSize: 10 }}>{folder.icon}</span>
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {folder.name}
-                </span>
-              </span>
-            )}
-          </div>
         </div>
 
         {firstImage && (
@@ -703,6 +681,7 @@ function NoteItem({ language, note, folder, viewMode, isSelected, onClick, onDel
             border: '1px solid var(--border)',
             background: 'var(--bg-surface)',
             flexShrink: 0,
+            marginTop: 2,
           }}>
             <img 
               src={firstImage} 
@@ -711,6 +690,50 @@ function NoteItem({ language, note, folder, viewMode, isSelected, onClick, onDel
               onError={(e) => { (e.currentTarget as HTMLElement).style.display = 'none'; }}
             />
           </div>
+        )}
+      </div>
+
+      <div style={{ 
+        fontSize: 'calc(10.5px * var(--ui-scale))', 
+        color: 'var(--text-secondary)', 
+        opacity: 0.9,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginTop: viewMode === 'compact' ? 6 : 10,
+        gap: 8,
+      }}>
+        <span>{formatDate(note.updated_at, language)}</span>
+        {folder && (
+          <span style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 4,
+            padding: '2px 8px',
+            borderRadius: 12,
+            fontSize: '9px',
+            fontWeight: 700,
+            textTransform: 'uppercase',
+            letterSpacing: '0.03em',
+            color: 'rgba(255, 255, 255, 0.92)',
+            textShadow: folder.color ? `0 0 2px ${folder.color}aa` : 'none',
+            border: folder.color ? `1px solid ${folder.color}66` : '1px solid var(--border)',
+            background: folder.color ? `${folder.color}18` : 'var(--bg-surface)',
+            boxShadow: folder.color ? `0 0 8px ${folder.color}22` : 'none',
+            backdropFilter: 'blur(4px)',
+            maxWidth: 120,
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            transition: 'all 0.2s ease',
+          }}
+            title={language === 'es' ? `Carpeta: ${folder.name}` : `Folder: ${folder.name}`}
+          >
+            <span style={{ fontSize: 10 }}>{folder.icon}</span>
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {folder.name}
+            </span>
+          </span>
         )}
       </div>
 
@@ -755,7 +778,7 @@ function NoteItem({ language, note, folder, viewMode, isSelected, onClick, onDel
           transform: translateY(-50%) scale(1.08) !important;
         }
       `}</style>
-    </div>
+    </motion.div>
   );
 }
 

@@ -16,6 +16,7 @@ export const TRANSLATIONS = {
     },
     sidebar: {
       allNotes: 'Todas las notas',
+      floatingNotes: 'Notas sueltas',
       folders: 'Folders',
       newFolder: 'Nueva carpeta',
       folderName: 'Nombre de la carpeta',
@@ -175,6 +176,7 @@ export const TRANSLATIONS = {
     },
     sidebar: {
       allNotes: 'All Notes',
+      floatingNotes: 'Floating Notes',
       folders: 'Folders',
       newFolder: 'New Folder',
       folderName: 'Folder Name',

@@ -1,10 +1,11 @@
 import { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
+import { motion } from 'motion/react';
 import { Folder, Note } from '../types';
 import { Language, TRANSLATIONS } from '../languages';
 import {
   Plus, FolderOpen, Settings, Lock, Search, X,
-  ChevronRight, Pencil, Trash2, FileText, Clock,
+  ChevronRight, Pencil, Trash2, FileText, Clock, Cloud,
 } from 'lucide-react';
 
 interface Props {
@@ -13,6 +14,7 @@ interface Props {
   selectedFolderId: string | null;
   noteCount: number;
   recentNotes: Note[];
+  allNotes: Note[];
   onSelectNote: (id: string) => void;
   onSelectFolder: (id: string | null) => void;
   onCreateFolder: (name: string, icon: string, color: string) => void;
@@ -47,7 +49,7 @@ function timeAgo(iso: string, language: Language): string {
 }
 
 export default function Sidebar({
-  language, folders, selectedFolderId, noteCount, recentNotes, onSelectNote,
+  language, folders, selectedFolderId, noteCount, recentNotes, allNotes, onSelectNote,
   onSelectFolder, onCreateFolder, onUpdateFolder, onDeleteFolder,
   onOpenSettings, onLock, searchQuery, onSearch, onMoveNote,
 }: Props) {
@@ -58,6 +60,7 @@ export default function Sidebar({
   const [newFolderColor, setNewFolderColor] = useState('#7c3aed');
   const [editingFolder, setEditingFolder] = useState<Folder | null>(null);
   const [contextMenu, setContextMenu] = useState<{ folder: Folder; x: number; y: number } | null>(null);
+  const [folderToDelete, setFolderToDelete] = useState<Folder | null>(null);
   const [showRecent, setShowRecent] = useState(false);
   const recentBtnRef = useRef<HTMLButtonElement>(null);
   const newFolderInputRef = useRef<HTMLInputElement>(null);
@@ -177,7 +180,7 @@ export default function Sidebar({
       {/* Nav */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '8px 8px' }}>
         {/* Todas las notas */}
-        <button
+        <motion.button
           onClick={() => onSelectFolder(null)}
           onDragOver={e => {
             e.preventDefault();
@@ -197,6 +200,8 @@ export default function Sidebar({
               }, 50);
             }
           }}
+          whileHover="hover"
+          whileTap="tap"
           style={{
             width: '100%',
             display: 'flex',
@@ -225,17 +230,34 @@ export default function Sidebar({
             textAlign: 'left',
             transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
             marginBottom: 4,
-            transform: activeDropTargetId === 'all' ? 'scale(1.03)' : 'none',
-            boxShadow: activeDropTargetId === 'all'
-              ? '0 0 12px var(--accent-glow)'
-              : isNoteDragging
-                ? '0 0 4px rgba(124, 90, 237, 0.15)'
-                : 'none',
+            position: 'relative',
+            boxShadow: selectedFolderId === null && !searchQuery
+              ? '0 0 12px var(--accent-glow), inset 0 0 4px rgba(255,255,255,0.01), inset 0 1px 0 rgba(255,255,255,0.02)'
+              : 'none',
           }}
-          onMouseEnter={e => { if (selectedFolderId !== null && activeDropTargetId !== 'all') (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'; }}
-          onMouseLeave={e => { if (selectedFolderId !== null && activeDropTargetId !== 'all') (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+          variants={{
+            hover: {
+              x: 3,
+              boxShadow: '0 0 14px var(--accent-glow), inset 0 0 4px rgba(255,255,255,0.03), inset 0 1px 0 rgba(255,255,255,0.04)',
+              borderColor: 'rgba(255, 255, 255, 0.08)',
+              background: selectedFolderId === null && !searchQuery ? 'var(--bg-active)' : 'rgba(255, 255, 255, 0.02)',
+              transition: { type: 'spring', stiffness: 400, damping: 18 }
+            },
+            tap: {
+              scale: 0.98,
+              x: 0,
+              transition: { duration: 0.1 }
+            }
+          }}
         >
-          <FileText size={15} style={{ pointerEvents: 'none' }} />
+          <motion.span
+            variants={{
+              hover: { scale: 1.2, rotate: [0, -5, 5, 0], transition: { type: 'spring', stiffness: 300, damping: 10 } }
+            }}
+            style={{ display: 'inline-flex', alignItems: 'center', pointerEvents: 'none' }}
+          >
+            <FileText size={15} />
+          </motion.span>
           <span style={{ flex: 1, pointerEvents: 'none' }}>{t.sidebar.allNotes}</span>
           <span style={{
             fontSize: 'calc(11px * var(--ui-scale))',
@@ -245,7 +267,97 @@ export default function Sidebar({
             borderRadius: 10,
             pointerEvents: 'none',
           }}>{noteCount}</span>
-        </button>
+        </motion.button>
+
+        {/* Notas Sueltas / Floating Notes */}
+        <motion.button
+          onClick={() => onSelectFolder('floating')}
+          onDragOver={e => {
+            e.preventDefault();
+            if (activeDropTargetId !== 'floating') {
+              setActiveDropTargetId('floating');
+            }
+          }}
+          onDragLeave={() => setActiveDropTargetId(null)}
+          onDrop={e => {
+            e.preventDefault();
+            const noteId = e.dataTransfer.getData('text/plain');
+            setActiveDropTargetId(null);
+            setIsNoteDragging(false);
+            if (noteId) {
+              setTimeout(() => {
+                onMoveNote(noteId, null);
+              }, 50);
+            }
+          }}
+          whileHover="hover"
+          whileTap="tap"
+          style={{
+            width: '100%',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 9,
+            padding: '10px 12px',
+            borderRadius: 'var(--radius-md)',
+            border: isNoteDragging
+              ? activeDropTargetId === 'floating'
+                ? '1px solid var(--accent)'
+                : '1px dashed rgba(6, 182, 212, 0.4)'
+              : '1px solid transparent',
+            background: activeDropTargetId === 'floating'
+              ? 'var(--accent-dim)'
+              : selectedFolderId === 'floating' && !searchQuery
+                ? 'var(--bg-active)'
+                : 'transparent',
+            color: activeDropTargetId === 'floating'
+              ? 'var(--accent-light)'
+              : selectedFolderId === 'floating' && !searchQuery
+                ? 'var(--accent-light)'
+                : 'var(--text-secondary)',
+            cursor: 'pointer',
+            fontSize: 'calc(13px * var(--ui-scale))',
+            fontWeight: (selectedFolderId === 'floating' && !searchQuery) || activeDropTargetId === 'floating' ? 600 : 400,
+            textAlign: 'left',
+            transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+            marginBottom: 4,
+            position: 'relative',
+            boxShadow: selectedFolderId === 'floating' && !searchQuery
+              ? '0 0 12px var(--accent-glow), inset 0 0 4px rgba(255,255,255,0.01), inset 0 1px 0 rgba(255,255,255,0.02)'
+              : 'none',
+          }}
+          variants={{
+            hover: {
+              x: 3,
+              boxShadow: '0 0 14px var(--accent-glow), inset 0 0 4px rgba(255,255,255,0.03), inset 0 1px 0 rgba(255,255,255,0.04)',
+              borderColor: 'rgba(255, 255, 255, 0.08)',
+              background: selectedFolderId === 'floating' && !searchQuery ? 'var(--bg-active)' : 'rgba(255, 255, 255, 0.02)',
+              transition: { type: 'spring', stiffness: 400, damping: 18 }
+            },
+            tap: {
+              scale: 0.98,
+              x: 0,
+              transition: { duration: 0.1 }
+            }
+          }}
+        >
+          <motion.span
+            variants={{
+              hover: { scale: 1.2, y: [0, -2, 2, 0], transition: { type: 'spring', stiffness: 300, damping: 10 } }
+            }}
+            style={{ display: 'inline-flex', alignItems: 'center', pointerEvents: 'none', color: '#06b6d4' }}
+          >
+            <Cloud size={15} />
+          </motion.span>
+          <span style={{ flex: 1, pointerEvents: 'none' }}>{t.sidebar.floatingNotes}</span>
+          <span style={{
+            fontSize: 'calc(11px * var(--ui-scale))',
+            background: 'var(--bg-surface)',
+            color: 'var(--text-muted)',
+            padding: '1px 6px',
+            borderRadius: 10,
+            pointerEvents: 'none',
+          }}>{allNotes.filter(n => !n.folder_id).length}</span>
+        </motion.button>
 
         {/* Separator */}
         <div style={{
@@ -264,7 +376,7 @@ export default function Sidebar({
           const isTarget = activeDropTargetId === folder.id;
           const isSelected = selectedFolderId === folder.id;
           return (
-            <button
+            <motion.button
               key={folder.id}
               onClick={() => onSelectFolder(folder.id)}
               onContextMenu={e => handleContextMenu(e, folder)}
@@ -286,6 +398,8 @@ export default function Sidebar({
                   }, 50);
                 }
               }}
+              whileHover="hover"
+              whileTap="tap"
               style={{
                 width: '100%',
                 display: 'flex',
@@ -315,15 +429,26 @@ export default function Sidebar({
                 transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
                 marginBottom: 4,
                 position: 'relative',
-                transform: isTarget ? 'scale(1.03)' : 'none',
                 boxShadow: isTarget
                   ? `0 0 12px ${folder.color}44, inset 0 0 6px ${folder.color}22`
-                  : isNoteDragging
-                    ? `0 0 4px ${folder.color}15`
+                  : isSelected
+                    ? `0 0 14px ${folder.color}18, inset 0 0 4px ${folder.color}0a, inset 0 1px 0 rgba(255,255,255,0.01)`
                     : 'none',
               }}
-              onMouseEnter={e => { if (!isSelected && !isTarget) (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)'; }}
-              onMouseLeave={e => { if (!isSelected && !isTarget) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+              variants={{
+                hover: {
+                  x: 3,
+                  boxShadow: `0 0 16px ${folder.color}2c, inset 0 0 4px ${folder.color}10, inset 0 1px 0 rgba(255,255,255,0.04)`,
+                  borderColor: `${folder.color}44`,
+                  background: isSelected ? 'var(--bg-active)' : 'rgba(255, 255, 255, 0.02)',
+                  transition: { type: 'spring', stiffness: 400, damping: 18 }
+                },
+                tap: {
+                  scale: 0.98,
+                  x: 0,
+                  transition: { duration: 0.1 }
+                }
+              }}
             >
               {/* Color bar */}
               {isSelected && !isTarget && (
@@ -338,20 +463,38 @@ export default function Sidebar({
                   pointerEvents: 'none',
                 }} />
               )}
-              <span style={{ 
-                fontSize: 'calc(15px * var(--ui-scale))',
-                transform: isTarget ? 'scale(1.2)' : 'none',
-                transition: 'transform 0.2s ease',
-                pointerEvents: 'none',
-              }}>{folder.icon}</span>
+              <motion.span 
+                variants={{
+                  hover: { scale: 1.2, rotate: [0, -5, 5, 0], transition: { type: 'spring', stiffness: 300, damping: 10 } }
+                }}
+                style={{ 
+                  fontSize: 'calc(15px * var(--ui-scale))',
+                  display: 'inline-block',
+                  marginRight: 2,
+                  pointerEvents: 'none',
+                }}
+              >
+                {folder.icon}
+              </motion.span>
               <span className="truncate" style={{ 
                 flex: 1,
                 textShadow: isTarget ? `0 0 4px ${folder.color}aa` : 'none',
                 color: isTarget ? '#fff' : undefined,
                 pointerEvents: 'none',
               }}>{folder.name}</span>
+              <span style={{
+                fontSize: 'calc(11px * var(--ui-scale))',
+                background: isSelected ? 'var(--bg-app)' : 'var(--bg-surface)',
+                color: isSelected ? 'var(--accent-light)' : 'var(--text-muted)',
+                padding: '1px 6px',
+                borderRadius: 10,
+                marginRight: 6,
+                fontWeight: isSelected ? 600 : 400,
+                pointerEvents: 'none',
+                boxShadow: isSelected ? 'none' : 'inset 0 1px 0 rgba(255,255,255,0.01)',
+              }}>{allNotes.filter(n => n.folder_id === folder.id).length}</span>
               <ChevronRight size={12} style={{ opacity: isTarget ? 0.8 : 0.4, color: isTarget ? folder.color : undefined, pointerEvents: 'none' }} />
-            </button>
+            </motion.button>
           );
         })}
 
@@ -549,7 +692,7 @@ export default function Sidebar({
       )}
 
       {/* Context Menu */}
-      {contextMenu && (
+      {contextMenu && createPortal(
         <div
           onClick={e => e.stopPropagation()}
           style={{
@@ -560,7 +703,7 @@ export default function Sidebar({
             border: '1px solid var(--border)',
             borderRadius: 'var(--radius-md)',
             padding: 6,
-            zIndex: 9999,
+            zIndex: 99999,
             minWidth: 160,
             boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
           }}
@@ -580,23 +723,23 @@ export default function Sidebar({
             className="btn btn-danger"
             style={{ width: '100%', justifyContent: 'flex-start', fontSize: 'calc(12px * var(--ui-scale))', padding: '6px 10px', gap: 8, marginTop: 2 }}
             onClick={() => {
-              if (confirm(t.sidebar.context.deleteConfirm.replace('{name}', contextMenu.folder.name))) {
-                onDeleteFolder(contextMenu.folder.id);
-              }
+              setFolderToDelete(contextMenu.folder);
               setContextMenu(null);
             }}
           >
             <Trash2 size={13} />
             {t.sidebar.context.delete}
           </button>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Edit folder modal */}
-      {editingFolder && (
+      {editingFolder && createPortal(
         <div style={{
-          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999,
+          position: 'fixed', inset: 0, background: 'rgba(5, 5, 8, 0.7)',
+          backdropFilter: 'blur(8px)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 99999,
         }}>
           <div style={{
             background: 'var(--bg-modal)',
@@ -607,6 +750,7 @@ export default function Sidebar({
             display: 'flex',
             flexDirection: 'column',
             gap: 16,
+            boxShadow: '0 20px 50px rgba(0, 0, 0, 0.6), 0 0 20px var(--accent-glow)',
           }}>
             <h3 style={{ fontSize: 'calc(16px * var(--ui-scale))', fontWeight: 600, color: 'var(--text-primary)' }}>{t.sidebar.context.edit}</h3>
 
@@ -661,7 +805,102 @@ export default function Sidebar({
               <button className="btn btn-ghost" onClick={() => setEditingFolder(null)} style={{ flex: 1 }}>{t.general.cancel}</button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Custom delete folder confirmation dialog */}
+      {folderToDelete && createPortal(
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(5, 5, 8, 0.7)',
+          backdropFilter: 'blur(8px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 99999,
+          animation: 'fadeIn 0.2s ease-out',
+        }}>
+          <motion.div
+            initial={{ opacity: 0, scale: 0.92, y: 15 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.92, y: 15 }}
+            transition={{ type: 'spring', damping: 26, stiffness: 330 }}
+            className="glass-effect"
+            style={{
+              width: 'calc(400px * var(--ui-scale))',
+              background: 'rgba(15, 15, 22, 0.95)',
+              border: '1px solid rgba(239, 68, 68, 0.3)',
+              borderRadius: 'var(--radius-lg)',
+              padding: '24px 28px',
+              boxShadow: '0 20px 50px rgba(0,0,0,0.6), 0 0 30px rgba(239, 68, 68, 0.05)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 20,
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+              <div style={{
+                width: 48,
+                height: 48,
+                borderRadius: 12,
+                background: 'rgba(239, 68, 68, 0.1)',
+                border: '1px solid rgba(239, 68, 68, 0.3)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+              }}>
+                <Trash2 size={24} style={{ color: '#ef4444', filter: 'drop-shadow(0 0 6px rgba(239, 68, 68, 0.6))' }} />
+              </div>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <h3 style={{
+                  fontSize: 'calc(16px * var(--ui-scale))',
+                  fontWeight: 700,
+                  color: 'var(--text-primary)',
+                  margin: 0,
+                  letterSpacing: '-0.01em',
+                }}>
+                  {language === 'es' ? '¿Eliminar carpeta?' : 'Delete Folder?'}
+                </h3>
+                <p style={{
+                  fontSize: 'calc(13px * var(--ui-scale))',
+                  color: 'var(--text-secondary)',
+                  margin: '6px 0 0 0',
+                  lineHeight: 1.4,
+                }}>
+                  {t.sidebar.context.deleteConfirm.replace('{name}', folderToDelete.name)}
+                </p>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginTop: 8 }}>
+              <button
+                className="btn btn-ghost"
+                onClick={() => setFolderToDelete(null)}
+                style={{ padding: '8px 16px', fontSize: 'calc(13px * var(--ui-scale))' }}
+              >
+                {t.general.cancel}
+              </button>
+              <button
+                className="btn btn-danger"
+                onClick={() => {
+                  onDeleteFolder(folderToDelete.id);
+                  setFolderToDelete(null);
+                }}
+                style={{
+                  padding: '8px 20px',
+                  fontSize: 'calc(13px * var(--ui-scale))',
+                  boxShadow: '0 0 12px rgba(239, 68, 68, 0.25)',
+                }}
+              >
+                {language === 'es' ? 'Eliminar' : 'Delete'}
+              </button>
+            </div>
+          </motion.div>
+        </div>,
+        document.body
       )}
     </div>
   );

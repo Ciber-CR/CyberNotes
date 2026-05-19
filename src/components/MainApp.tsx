@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Folder, Note, ThemeId } from '../types';
-import { Language } from '../languages';
+import { Language, TRANSLATIONS } from '../languages';
 import TitleBar from './TitleBar';
 import Sidebar from './Sidebar';
 import NoteList from './NoteList';
@@ -21,8 +21,12 @@ interface Props {
 export default function MainApp({ language, onLanguageChange, currentTheme, onThemeChange, colorIntensity, onIntensityChange, onLock }: Props) {
   const [folders, setFolders] = useState<Folder[]>([]);
   const [notes, setNotes] = useState<Note[]>([]);
+  const [allNotes, setAllNotes] = useState<Note[]>([]);
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
+  const [openNoteIds, setOpenNoteIds] = useState<string[]>([]);
+  const [draftCache, setDraftCache] = useState<Record<string, { title: string; content: string }>>({});
+  const [noteToCloseWithDraft, setNoteToCloseWithDraft] = useState<Note | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [showSettings, setShowSettings] = useState(false);
   const [layoutMode, setLayoutMode] = useState<1 | 2 | 3>(3);
@@ -49,7 +53,9 @@ export default function MainApp({ language, onLanguageChange, currentTheme, onTh
   const [autoUnlockCapsLockTimeout, setAutoUnlockCapsLockTimeout] = useState(0);
   const [capsLockSound, setCapsLockSound] = useState('cyber-beep');
   const [capsLockSoundScope, setCapsLockSoundScope] = useState('app');
+  const [tabsWidthMode, setTabsWidthMode] = useState<'normal' | 'wide'>('normal');
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const isLoadedRef = useRef(false);
 
   useEffect(() => {
     const trackMouse = (e: MouseEvent) => {
@@ -59,6 +65,7 @@ export default function MainApp({ language, onLanguageChange, currentTheme, onTh
     window.addEventListener('contextmenu', trackMouse, true);
     
     loadFolders();
+    loadAllNotes();
     loadNotes(null);
     loadSettings();
 
@@ -148,12 +155,28 @@ export default function MainApp({ language, onLanguageChange, currentTheme, onTh
     return () => window.removeEventListener('mousemove', handleMouseMove);
   }, [statusBarUrl]);
 
-  // Guardar última nota si la opción está activa
+  // Guardar última nota y sesión de pestañas si la opción está activa
   useEffect(() => {
-    if (rememberLastNote && selectedNoteId) {
+    if (isLoadedRef.current && rememberLastNote && selectedNoteId) {
       window.cyberNotesAPI.setSetting('last_note_id', selectedNoteId);
     }
   }, [selectedNoteId, rememberLastNote]);
+
+  useEffect(() => {
+    if (isLoadedRef.current && rememberLastNote) {
+      window.cyberNotesAPI.setSetting('open_note_ids', openNoteIds.join(','));
+    }
+  }, [openNoteIds, rememberLastNote]);
+
+  // Sincronizar selectedNoteId con openNoteIds
+  useEffect(() => {
+    if (selectedNoteId) {
+      setOpenNoteIds(prev => {
+        if (prev.includes(selectedNoteId)) return prev;
+        return [...prev, selectedNoteId];
+      });
+    }
+  }, [selectedNoteId]);
 
   const loadSettings = async () => {
     const scale = await window.cyberNotesAPI.getSetting('ui_scale');
@@ -193,15 +216,42 @@ export default function MainApp({ language, onLanguageChange, currentTheme, onTh
     const scopeVal = await window.cyberNotesAPI.getSetting('caps_lock_sound_scope');
     setCapsLockSoundScope(scopeVal || 'app');
 
+    const tabsWidth = await window.cyberNotesAPI.getSetting('tabs_width_mode');
+    if (tabsWidth) setTabsWidthMode(tabsWidth as 'normal' | 'wide');
+
     if (isRemember) {
-      const lastId = await window.cyberNotesAPI.getSetting('last_note_id');
-      if (lastId) setSelectedNoteId(lastId);
+      const savedIdsStr = await window.cyberNotesAPI.getSetting('open_note_ids');
+      if (savedIdsStr) {
+        const savedIds = savedIdsStr.split(',').filter(id => id.trim() !== '');
+        if (savedIds.length > 0) {
+          setOpenNoteIds(savedIds);
+          const lastId = await window.cyberNotesAPI.getSetting('last_note_id');
+          if (lastId && savedIds.includes(lastId)) {
+            setSelectedNoteId(lastId);
+          } else {
+            setSelectedNoteId(savedIds[0]);
+          }
+        }
+      } else {
+        const lastId = await window.cyberNotesAPI.getSetting('last_note_id');
+        if (lastId) {
+          setOpenNoteIds([lastId]);
+          setSelectedNoteId(lastId);
+        }
+      }
     }
+    // Marcar que la carga inicial de base de datos ha concluido con éxito
+    isLoadedRef.current = true;
   };
 
   const loadFolders = async () => {
     const f = await window.cyberNotesAPI.getFolders();
     setFolders(f);
+  };
+
+  const loadAllNotes = async () => {
+    const all = await window.cyberNotesAPI.getAllNotes();
+    setAllNotes(all);
   };
 
   const loadNotes = async (folderId: string | null) => {
@@ -212,7 +262,7 @@ export default function MainApp({ language, onLanguageChange, currentTheme, onTh
       n = await window.cyberNotesAPI.getNotesByFolder(folderId);
     }
     setNotes(n);
-    // Si no hay nota seleccionada, selecciona la primera
+    // Si no hay nota seleccionada y hay notas, selecciona la primera
     if (n.length > 0 && !selectedNoteId) {
       setSelectedNoteId(n[0].id);
     }
@@ -220,17 +270,27 @@ export default function MainApp({ language, onLanguageChange, currentTheme, onTh
 
   const handleSelectFolder = async (folderId: string | null) => {
     setSelectedFolderId(folderId);
-    setSelectedNoteId(null);
     setSearchQuery('');
     const n = await window.cyberNotesAPI.getNotesByFolder(folderId);
     setNotes(n);
-    if (n.length > 0) setSelectedNoteId(n[0].id);
   };
 
   const handleRenameNote = async (id: string, title: string) => {
-    const note = notes.find(n => n.id === id);
+    const note = allNotes.find(n => n.id === id);
     if (!note) return;
-    handleSaveNote({ ...note, title });
+    
+    // Si la nota posee borrador en caché, actualizamos el título del borrador
+    if (draftCache[id]) {
+      setDraftCache(prev => ({
+        ...prev,
+        [id]: { ...prev[id], title }
+      }));
+    }
+    
+    const updated = { ...note, title, updated_at: new Date().toISOString() };
+    setNotes(prev => prev.map(n => n.id === updated.id ? updated : n));
+    setAllNotes(prev => prev.map(n => n.id === updated.id ? updated : n));
+    await window.cyberNotesAPI.saveNote(updated);
   };
 
   const handleSearch = async (q: string) => {
@@ -250,7 +310,7 @@ export default function MainApp({ language, onLanguageChange, currentTheme, onTh
     const now = new Date().toISOString();
     const newNote: Note = {
       id: window.crypto.randomUUID(),
-      folder_id: selectedFolderId,
+      folder_id: selectedFolderId === 'floating' ? null : selectedFolderId,
       title: language === 'es' ? 'Nueva nota' : 'New note',
       content: '',
       preview: '',
@@ -263,6 +323,7 @@ export default function MainApp({ language, onLanguageChange, currentTheme, onTh
       const saved = await window.cyberNotesAPI.saveNote(newNote);
       console.log('[MainApp] Note saved:', saved);
       setNotes(prev => [saved, ...prev]);
+      setAllNotes(prev => [saved, ...prev]);
       setSelectedNoteId(saved.id);
     } catch (err) {
       console.error('[MainApp] Error creating note:', err);
@@ -272,15 +333,85 @@ export default function MainApp({ language, onLanguageChange, currentTheme, onTh
   const handleSaveNote = useCallback(async (note: Note) => {
     const updated = { ...note, updated_at: new Date().toISOString() };
     setNotes(prev => prev.map(n => n.id === updated.id ? updated : n));
+    setAllNotes(prev => prev.map(n => n.id === updated.id ? updated : n));
     await window.cyberNotesAPI.saveNote(updated);
+    
+    // Al guardar exitosamente, eliminamos la nota del caché de borradores sucios
+    setDraftCache(prev => {
+      const next = { ...prev };
+      delete next[note.id];
+      return next;
+    });
   }, []);
+
+  const handleEditDraft = useCallback((id: string, title: string, content: string) => {
+    setDraftCache(prev => ({
+      ...prev,
+      [id]: { title, content }
+    }));
+  }, []);
+
+  const executeCloseTab = useCallback((id: string) => {
+    setOpenNoteIds(prev => {
+      const filtered = prev.filter(noteId => noteId !== id);
+      
+      // Si cerramos la pestaña activa, cambiamos el foco a una pestaña vecina
+      if (selectedNoteId === id) {
+        if (filtered.length > 0) {
+          const closedIndex = prev.indexOf(id);
+          const newSelectedIndex = Math.min(closedIndex, filtered.length - 1);
+          setSelectedNoteId(filtered[newSelectedIndex]);
+        } else {
+          setSelectedNoteId(null);
+        }
+      }
+      return filtered;
+    });
+    
+    // Descartar borrador si se cierra la pestaña
+    setDraftCache(prev => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+  }, [selectedNoteId]);
+
+  const handleCloseTab = useCallback((id: string) => {
+    const isDirty = draftCache[id] !== undefined && !autosaveEnabled;
+    if (isDirty) {
+      const noteToClose = allNotes.find(n => n.id === id);
+      if (noteToClose) {
+        setNoteToCloseWithDraft(noteToClose);
+        return;
+      }
+    }
+    
+    executeCloseTab(id);
+  }, [draftCache, autosaveEnabled, allNotes, executeCloseTab]);
 
   const handleDeleteNote = async (id: string) => {
     await window.cyberNotesAPI.deleteNote(id);
     const remaining = notes.filter(n => n.id !== id);
     setNotes(remaining);
+    setAllNotes(prev => prev.filter(n => n.id !== id));
+    
+    // Remover de las pestañas abiertas inmediatamente
+    setOpenNoteIds(prev => prev.filter(noteId => noteId !== id));
+    
+    // Limpiar caché de borrador si existía
+    setDraftCache(prev => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+
     if (selectedNoteId === id) {
-      setSelectedNoteId(remaining.length > 0 ? remaining[0].id : null);
+      const remainingTabs = openNoteIds.filter(noteId => noteId !== id);
+      if (remainingTabs.length > 0) {
+        setSelectedNoteId(remainingTabs[0]);
+      } else {
+        setSelectedNoteId(remaining.length > 0 ? remaining[0].id : null);
+      }
     }
   };
 
@@ -288,19 +419,21 @@ export default function MainApp({ language, onLanguageChange, currentTheme, onTh
     const updated = { ...note, pinned: note.pinned === 1 ? 0 : 1 };
     await window.cyberNotesAPI.saveNote(updated);
     setNotes(prev => prev.map(n => n.id === updated.id ? updated : n));
+    setAllNotes(prev => prev.map(n => n.id === updated.id ? updated : n));
   };
 
   const handleMoveNote = async (noteId: string, targetFolderId: string | null) => {
-    const note = notes.find(n => n.id === noteId);
+    const note = allNotes.find(n => n.id === noteId);
     if (!note) return;
     const updated = { ...note, folder_id: targetFolderId, updated_at: new Date().toISOString() };
     await window.cyberNotesAPI.saveNote(updated);
     
-    // Si estamos viendo una carpeta específica y movemos la nota a otra, la quitamos de la lista
+    setAllNotes(prev => prev.map(n => n.id === noteId ? updated : n));
+
+    // Si estamos viendo una carpeta específica y movemos la nota a otra, la quitamos de la lista visible
     if (selectedFolderId !== null && selectedFolderId !== targetFolderId && !searchQuery) {
        const remaining = notes.filter(n => n.id !== noteId);
        setNotes(remaining);
-       if (selectedNoteId === noteId) setSelectedNoteId(remaining.length > 0 ? remaining[0].id : null);
     } else {
        setNotes(prev => prev.map(n => n.id === noteId ? updated : n));
     }
@@ -366,6 +499,11 @@ export default function MainApp({ language, onLanguageChange, currentTheme, onTh
     await window.cyberNotesAPI.setSetting('remember_last_note', v.toString());
   };
 
+  const handleTabsWidthModeChange = async (mode: 'normal' | 'wide') => {
+    setTabsWidthMode(mode);
+    await window.cyberNotesAPI.setSetting('tabs_width_mode', mode);
+  };
+
   const handleShowLineCounterChange = async (v: boolean) => {
     setShowLineCounter(v);
     await window.cyberNotesAPI.setSetting('show_line_counter', v.toString());
@@ -396,7 +534,7 @@ export default function MainApp({ language, onLanguageChange, currentTheme, onTh
     await window.cyberNotesAPI.setSetting('caps_lock_sound_scope', val);
   };
 
-  const selectedNote = notes.find(n => n.id === selectedNoteId) ?? null;
+  const selectedNote = allNotes.find(n => n.id === selectedNoteId) ?? null;
 
   const startDragSidebar = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -469,10 +607,11 @@ export default function MainApp({ language, onLanguageChange, currentTheme, onTh
               language={language}
               folders={folders}
               selectedFolderId={selectedFolderId}
-              noteCount={notes.length}
-              recentNotes={[...notes].sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()).slice(0, 5)}
+              noteCount={allNotes.length}
+              recentNotes={[...allNotes].sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()).slice(0, 5)}
+              allNotes={allNotes}
               onSelectNote={(id) => {
-                let note = notes.find(n => n.id === id);
+                let note = allNotes.find(n => n.id === id);
                 if (note) { setSelectedNoteId(id); setSelectedFolderId(note.folder_id); }
               }}
               onSelectFolder={handleSelectFolder}
@@ -508,7 +647,9 @@ export default function MainApp({ language, onLanguageChange, currentTheme, onTh
               onTogglePin={handleTogglePin}
               onMoveNote={handleMoveNote}
               onRenameNote={handleRenameNote}
-              selectedFolder={folders.find(f => f.id === selectedFolderId) ?? null}
+              selectedFolder={selectedFolderId === 'floating'
+                ? { id: 'floating', name: TRANSLATIONS[language].sidebar.floatingNotes, icon: '☁️', color: '#06b6d4' } as Folder
+                : (folders.find(f => f.id === selectedFolderId) ?? null)}
               searchQuery={searchQuery}
             />
             <div 
@@ -537,6 +678,14 @@ export default function MainApp({ language, onLanguageChange, currentTheme, onTh
           capsLockSoundScope={capsLockSoundScope}
           uiScale={uiScale}
           onScaleChange={handleScaleChange}
+          openNoteIds={openNoteIds}
+          notes={allNotes}
+          folders={folders}
+          onSelectNote={setSelectedNoteId}
+          onCloseTab={handleCloseTab}
+          draftCache={draftCache}
+          onEditDraft={handleEditDraft}
+          tabsWidthMode={tabsWidthMode}
         />
       </div>
 
@@ -572,8 +721,151 @@ export default function MainApp({ language, onLanguageChange, currentTheme, onTh
           onCapsLockSoundScopeChange={handleCapsLockSoundScopeChange}
           onClose={() => setShowSettings(false)}
           onLock={onLock}
+          tabsWidthMode={tabsWidthMode}
+          onTabsWidthModeChange={handleTabsWidthModeChange}
         />
       )}
+
+      {/* Modal de Confirmación de Cierre de Pestaña Sucia */}
+      <AnimatePresence>
+        {noteToCloseWithDraft && (
+          <div 
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: 'rgba(5, 5, 8, 0.8)',
+              backdropFilter: 'blur(16px)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 20000,
+            }}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.92, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.92, y: 15 }}
+              transition={{ type: 'spring', damping: 26, stiffness: 330 }}
+              className="glass-effect"
+              style={{
+                width: 'calc(420px * var(--ui-scale))',
+                background: 'rgba(15, 15, 22, 0.95)',
+                border: '1px solid rgba(234, 88, 12, 0.3)',
+                borderRadius: 'var(--radius-lg)',
+                padding: '24px 28px',
+                boxShadow: '0 20px 50px rgba(0,0,0,0.6), 0 0 30px rgba(234, 88, 12, 0.05)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 20,
+              }}
+            >
+              {/* Header */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                <div style={{
+                  width: 48,
+                  height: 48,
+                  borderRadius: 12,
+                  background: 'rgba(234, 88, 12, 0.1)',
+                  border: '1px solid rgba(234, 88, 12, 0.3)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0,
+                }}>
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#ea580c" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ filter: 'drop-shadow(0 0 6px rgba(234, 88, 12, 0.6))' }}>
+                    <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/>
+                    <line x1="12" y1="9" x2="12" y2="13"/>
+                    <line x1="12" y1="17" x2="12.01" y2="17"/>
+                  </svg>
+                </div>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <h3 style={{
+                    fontSize: 'calc(16px * var(--ui-scale))',
+                    fontWeight: 700,
+                    color: 'var(--text-primary)',
+                    margin: 0,
+                    letterSpacing: '-0.01em',
+                  }}>
+                    {language === 'es' ? '¿Guardar cambios?' : 'Save changes?'}
+                  </h3>
+                  <p style={{
+                    fontSize: 'calc(12px * var(--ui-scale))',
+                    color: 'var(--text-muted)',
+                    margin: '4px 0 0 0',
+                    lineHeight: 1.4,
+                  }}>
+                    {language === 'es' 
+                      ? `La nota "${draftCache[noteToCloseWithDraft.id]?.title || noteToCloseWithDraft.title}" tiene cambios no guardados. Si la cierras ahora, perderás las modificaciones.` 
+                      : `The note "${draftCache[noteToCloseWithDraft.id]?.title || noteToCloseWithDraft.title}" has unsaved changes. If you close it now, your modifications will be lost.`}
+                  </p>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 4 }}>
+                {/* Save and Close */}
+                <button
+                  className="btn btn-primary"
+                  onClick={async () => {
+                    const draft = draftCache[noteToCloseWithDraft.id];
+                    if (draft) {
+                      const updated = { ...noteToCloseWithDraft, title: draft.title, content: draft.content };
+                      await handleSaveNote(updated);
+                    }
+                    executeCloseTab(noteToCloseWithDraft.id);
+                    setNoteToCloseWithDraft(null);
+                  }}
+                  style={{ justifyContent: 'center', padding: '10px 16px', fontSize: 'calc(13px * var(--ui-scale))' }}
+                >
+                  {language === 'es' ? 'Guardar y Cerrar' : 'Save & Close'}
+                </button>
+
+                {/* Close without saving */}
+                <button
+                  className="btn btn-danger"
+                  onClick={() => {
+                    executeCloseTab(noteToCloseWithDraft.id);
+                    setNoteToCloseWithDraft(null);
+                  }}
+                  style={{
+                    justifyContent: 'center',
+                    padding: '10px 16px',
+                    fontSize: 'calc(13px * var(--ui-scale))',
+                    background: 'rgba(239, 68, 68, 0.1)',
+                    border: '1px solid rgba(239, 68, 68, 0.3)',
+                    color: '#ef4444',
+                    transition: 'all 0.2s',
+                  }}
+                  onMouseEnter={(e) => {
+                    const btn = e.currentTarget as HTMLButtonElement;
+                    btn.style.background = '#ef4444';
+                    btn.style.color = '#fff';
+                  }}
+                  onMouseLeave={(e) => {
+                    const btn = e.currentTarget as HTMLButtonElement;
+                    btn.style.background = 'rgba(239, 68, 68, 0.1)';
+                    btn.style.color = '#ef4444';
+                  }}
+                >
+                  {language === 'es' ? 'Cerrar sin Guardar' : 'Close without Saving'}
+                </button>
+
+                {/* Cancel */}
+                <button
+                  className="btn btn-ghost"
+                  onClick={() => setNoteToCloseWithDraft(null)}
+                  style={{ justifyContent: 'center', padding: '8px 16px', fontSize: 'calc(13px * var(--ui-scale))' }}
+                >
+                  {language === 'es' ? 'Cancelar' : 'Cancel'}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* Status Bar (Hover Link) */}
       <AnimatePresence>

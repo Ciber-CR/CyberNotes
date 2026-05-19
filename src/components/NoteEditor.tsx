@@ -8,7 +8,7 @@ import Link from '@tiptap/extension-link';
 import Placeholder from '@tiptap/extension-placeholder';
 import Underline from '@tiptap/extension-underline';
 import Highlight from '@tiptap/extension-highlight';
-import { Note } from '../types';
+import { Note, Folder } from '../types';
 import { Language, TRANSLATIONS } from '../languages';
 import { playSynthSound } from '../utils/audio';
 import {
@@ -16,7 +16,7 @@ import {
   Heading1, Heading2, List, ListOrdered, Link as LinkIcon,
   Image as ImageIcon, Highlighter, Quote, Minus, Code,
   Plus, Pin, Keyboard, AlignLeft, AlignCenter, AlignRight, Braces, PanelLeft,
-  Undo, Redo, Save, Download
+  Undo, Redo, Save, Download, X
 } from 'lucide-react';
 
 interface Props {
@@ -35,6 +35,14 @@ interface Props {
   capsLockSoundScope?: string;
   uiScale?: number;
   onScaleChange?: (scale: number) => void;
+  openNoteIds?: string[];
+  notes?: Note[];
+  folders?: Folder[];
+  onSelectNote?: (id: string) => void;
+  onCloseTab?: (id: string) => void;
+  draftCache?: Record<string, { title: string; content: string }>;
+  onEditDraft?: (id: string, title: string, content: string) => void;
+  tabsWidthMode?: 'normal' | 'wide';
 }
 
 // Extensión personalizada para imagen con soporte de tamaño y alineación
@@ -110,7 +118,15 @@ export default function NoteEditor({
   capsLockSound = 'cyber-beep',
   capsLockSoundScope = 'app',
   uiScale = 1.0,
-  onScaleChange
+  onScaleChange,
+  openNoteIds = [],
+  notes = [],
+  folders = [],
+  onSelectNote,
+  onCloseTab,
+  draftCache = {},
+  onEditDraft,
+  tabsWidthMode = 'normal'
 }: Props) {
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const currentNoteRef = useRef<Note | null>(note);
@@ -119,6 +135,54 @@ export default function NoteEditor({
   const lastContextMenuTargetRef = useRef<'title' | 'editor'>('editor');
   const lastContextMenuTimeRef = useRef(0);
   const isDirtyRef = useRef(false);
+  const tabStripRef = useRef<HTMLDivElement>(null);
+  const [hoveredTab, setHoveredTab] = useState<{
+    id: string;
+    rect: DOMRect;
+    title: string;
+    folderName?: string;
+    folderIcon?: string;
+    folderColor?: string;
+  } | null>(null);
+
+  const [overscrollOffset, setOverscrollOffset] = useState(0);
+
+  useEffect(() => {
+    setHoveredTab(null);
+    const el = tabStripRef.current;
+    if (!el) return;
+
+    let bounceTimeout: ReturnType<typeof setTimeout> | null = null;
+
+    const handleWheel = (e: WheelEvent) => {
+      if (el.scrollWidth > el.clientWidth) {
+        e.preventDefault();
+        
+        const oldScrollLeft = el.scrollLeft;
+        el.scrollLeft += e.deltaY;
+        
+        if (el.scrollLeft === oldScrollLeft) {
+          // Límite alcanzado, calcular el desplazamiento elástico
+          const pull = -e.deltaY * 0.15;
+          setOverscrollOffset(prev => Math.min(30, Math.max(-30, prev + pull)));
+          
+          if (bounceTimeout) clearTimeout(bounceTimeout);
+          bounceTimeout = setTimeout(() => {
+            setOverscrollOffset(0);
+          }, 150);
+        } else {
+          setOverscrollOffset(0);
+        }
+      }
+    };
+
+    el.addEventListener('wheel', handleWheel, { passive: false });
+    return () => {
+      el.removeEventListener('wheel', handleWheel);
+      if (bounceTimeout) clearTimeout(bounceTimeout);
+    };
+  }, [openNoteIds]);
+
   // Sincronizar ref con cada render para que scheduleAutoSave siempre tenga la note actual
   const [pinned, setPinned] = useState(note?.pinned === 1);
   const [isRaw, setIsRaw] = useState(false);
@@ -129,9 +193,11 @@ export default function NoteEditor({
   const [lineInfo, setLineInfo] = useState({ line: 1, col: 1, total: 1 });
   const [textMetrics, setTextMetrics] = useState({ words: 0, chars: 0, readingTime: 0 });
   const [localTitle, setLocalTitle] = useState(note?.title || '');
+  const localTitleRef = useRef(localTitle);
 
   const updateTitle = (newTitle: string) => {
     setLocalTitle(newTitle);
+    localTitleRef.current = newTitle;
     const current = currentNoteRef.current;
     if (current) {
       const updated = { ...current, title: newTitle };
@@ -140,6 +206,7 @@ export default function NoteEditor({
         onSave(updated);
       } else {
         setHasUnsavedChanges(true);
+        onEditDraft?.(current.id, newTitle, editor?.getHTML() || '');
       }
     }
   };
@@ -151,6 +218,7 @@ export default function NoteEditor({
   const toastTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const prevCapsActiveRef = useRef<boolean | null>(null);
   const prevCapsActiveForSoundRef = useRef<boolean | null>(null);
+  const [isFocused, setIsFocused] = useState(false);
 
   // 1. Initial check on startup / mount
   useEffect(() => {
@@ -372,7 +440,11 @@ export default function NoteEditor({
     onSelectionUpdate: ({ editor }) => {
       updateLineInfo(editor);
     },
+    onFocus: () => {
+      setIsFocused(true);
+    },
     onBlur: ({ editor }) => {
+      setIsFocused(false);
       if (isDirtyRef.current) {
         const html = editor.getHTML();
         const current = currentNoteRef.current;
@@ -426,11 +498,13 @@ export default function NoteEditor({
     window.cyberNotesAPI?.setUnsavedChanges(hasUnsavedChanges);
   }, [hasUnsavedChanges]);
 
-  // Actualizar editor cuando cambia la nota seleccionada
+  // Actualizar editor cuando cambia la nota seleccionada o cuando se monta/desmonta
   useEffect(() => {
+    const draft = note ? draftCache[note.id] : null;
     setPinned(note?.pinned === 1);
-    setLocalTitle(note?.title || '');
-    setHasUnsavedChanges(false);
+    setLocalTitle(draft ? draft.title : (note?.title || ''));
+    localTitleRef.current = draft ? draft.title : (note?.title || '');
+    setHasUnsavedChanges(!!draft);
 
     if (!editor || !note) return;
     
@@ -441,7 +515,7 @@ export default function NoteEditor({
     if (saveTimer.current) clearTimeout(saveTimer.current);
 
     // Carga inteligente: intenta parsear JSON, si falla carga como HTML
-    const content = note.content || '';
+    const content = draft ? draft.content : (note.content || '');
     if (content.trim().startsWith('{')) {
       try {
         const parsed = JSON.parse(content);
@@ -456,7 +530,7 @@ export default function NoteEditor({
     updateTextMetrics(editor);
     updateLineInfo(editor);
     
-    if (note.title === 'Nueva nota') {
+    if ((draft ? draft.title : note.title) === 'Nueva nota') {
       setTimeout(() => {
         if (titleInputRef.current) {
           titleInputRef.current.focus();
@@ -499,6 +573,10 @@ export default function NoteEditor({
   const scheduleAutoSave = useCallback((html: string) => {
     if (!autosaveEnabled) {
       setHasUnsavedChanges(true);
+      const current = currentNoteRef.current;
+      if (current) {
+        onEditDraft?.(current.id, localTitleRef.current, html);
+      }
       return;
     }
     if (saveTimer.current) clearTimeout(saveTimer.current);
@@ -687,9 +765,135 @@ export default function NoteEditor({
 
   return (
     <div 
-      className="glass-effect editor-glass"
+      className={`glass-effect editor-glass ${isFocused ? 'focused-immersive' : ''}`}
       style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'var(--bg-editor)', overflow: 'hidden' }}
     >
+      {/* Pestañas (Tabs) Premium */}
+      {openNoteIds.length > 0 && (
+        <div style={{ background: 'rgba(10, 10, 15, 0.95)', borderBottom: '1px solid var(--border)', overflow: 'hidden' }}>
+          <div 
+            ref={tabStripRef} 
+            className={`tab-strip ${tabsWidthMode === 'wide' ? 'tabs-wide' : ''}`}
+            style={{
+              transform: `translateX(${overscrollOffset}px)`,
+              transition: overscrollOffset === 0 ? 'transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)' : 'none',
+              borderBottom: 'none',
+            }}
+          >
+            {openNoteIds.map((tabId) => {
+              const tabNote = notes.find(n => n.id === tabId);
+              if (!tabNote) return null;
+
+              const isActive = note.id === tabId;
+              const draft = draftCache[tabId];
+              const displayTitle = draft ? draft.title : tabNote.title;
+              const isDirty = draft !== undefined && !autosaveEnabled;
+
+              const folder = folders.find(f => f.id === tabNote.folder_id);
+              const folderColor = folder ? folder.color : 'transparent';
+
+              return (
+                <div
+                  key={tabId}
+                  className={`editor-tab ${isActive ? 'active' : ''}`}
+                  onClick={() => onSelectNote?.(tabId)}
+                  onMouseEnter={(e) => {
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    setHoveredTab({
+                      id: tabId,
+                      rect,
+                      title: displayTitle || (language === 'es' ? 'Sin título' : 'Untitled'),
+                      folderName: folder?.name,
+                      folderIcon: folder?.icon,
+                      folderColor: folder?.color,
+                    });
+                  }}
+                  onMouseLeave={() => {
+                    setHoveredTab(null);
+                  }}
+                >
+                  {isActive && (
+                    <motion.div
+                      layoutId="activeTabBackground"
+                      className="active-tab-glow"
+                      style={{
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        height: 2,
+                        background: 'var(--accent)',
+                        boxShadow: '0 0 8px var(--accent-glow)',
+                      }}
+                    />
+                  )}
+
+                  {folder && (
+                    <span
+                      style={{
+                        width: 8,
+                        height: 8,
+                        borderRadius: '50%',
+                        background: folderColor,
+                        boxShadow: `0 0 6px ${folderColor}`,
+                        display: 'inline-block',
+                        flexShrink: 0,
+                      }}
+                    />
+                  )}
+
+                  <span className="editor-tab-title" style={{ fontStyle: isDirty ? 'italic' : 'normal' }}>
+                    {displayTitle || (language === 'es' ? 'Sin título' : 'Untitled')}
+                  </span>
+
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 16, height: 16, position: 'relative' }}>
+                    {isDirty ? (
+                      <div 
+                        className="dirty-indicator-dot"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onCloseTab?.(tabId);
+                        }}
+                        onMouseEnter={(e) => {
+                          const target = e.currentTarget as HTMLElement;
+                          target.style.background = 'transparent';
+                          target.style.boxShadow = 'none';
+                          target.innerHTML = `<span style="color: #ef4444; font-size: 10px; font-weight: bold; display: flex; align-items: center; justify-content: center; line-height: 1;">✕</span>`;
+                        }}
+                        onMouseLeave={(e) => {
+                          const target = e.currentTarget as HTMLElement;
+                          target.style.background = '#f97316';
+                          target.style.boxShadow = '0 0 8px #ea580c';
+                          target.innerHTML = '';
+                        }}
+                      />
+                    ) : (
+                      <button
+                        className="tab-close-btn"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onCloseTab?.(tabId);
+                        }}
+                      >
+                        <X size={10} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+
+            <button 
+              className="tab-new-btn"
+              onClick={onCreateNote}
+              title={language === 'es' ? 'Nueva pestaña' : 'New tab'}
+            >
+              <Plus size={14} />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Title Container (Moved from below) */}
       <div style={{ 
         padding: '20px 48px 16px', 
@@ -1190,7 +1394,7 @@ export default function NoteEditor({
         >
           {isRaw ? (
             <textarea
-              value={editor?.getHTML() || ''}
+              value={(editor?.getHTML() || '').replace(/(<img\b[^>]*\bsrc=["'])(data:image\/[^"']*)(["'])/gi, '$1[image]$3')}
               readOnly
               style={{
                 width: '100%', height: '100%', padding: '0 48px 32px', background: 'transparent',
@@ -1736,6 +1940,61 @@ export default function NoteEditor({
           </motion.div>
         )}
       </AnimatePresence>
+
+      {hoveredTab && createPortal(
+        <div style={{
+          position: 'fixed',
+          left: hoveredTab.rect.left + hoveredTab.rect.width / 2,
+          top: hoveredTab.rect.bottom + 8,
+          transform: 'translateX(-50%)',
+          background: 'rgba(15, 15, 20, 0.95)',
+          backdropFilter: 'blur(10px)',
+          border: '1px solid var(--border)',
+          boxShadow: '0 8px 24px rgba(0, 0, 0, 0.5), 0 0 10px var(--accent-glow)',
+          borderRadius: 8,
+          padding: '8px 12px',
+          color: '#fff',
+          fontSize: 11,
+          zIndex: 99999,
+          pointerEvents: 'none',
+          whiteSpace: 'nowrap',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 4,
+          alignItems: 'center',
+          animation: 'tooltipFadeIn 0.15s cubic-bezier(0.4, 0, 0.2, 1)',
+        }}>
+          <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{hoveredTab.title}</span>
+          {hoveredTab.folderName && (
+            <span style={{ 
+              fontSize: 9, 
+              color: hoveredTab.folderColor || 'var(--text-muted)',
+              fontWeight: 700,
+              textTransform: 'uppercase',
+              opacity: 0.9,
+              letterSpacing: '0.05em',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 4,
+            }}>
+              <span>{hoveredTab.folderIcon || '📁'}</span>
+              <span>{hoveredTab.folderName}</span>
+            </span>
+          )}
+          <div style={{
+            position: 'absolute',
+            top: -4,
+            left: '50%',
+            transform: 'translateX(-50%) rotate(45deg)',
+            width: 8,
+            height: 8,
+            background: 'rgba(15, 15, 20, 0.95)',
+            borderTop: '1px solid var(--border)',
+            borderLeft: '1px solid var(--border)',
+          }} />
+        </div>,
+        document.body
+      )}
 
       <style>{`
         .ProseMirror {

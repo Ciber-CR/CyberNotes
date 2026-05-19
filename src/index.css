@@ -91,7 +91,11 @@ body:has(.has-bg),
 .glass-effect {
   backdrop-filter: blur(var(--glass-blur));
   -webkit-backdrop-filter: blur(var(--glass-blur));
-  transition: backdrop-filter 0.3s ease, background 0.3s ease;
+  transition: backdrop-filter 0.3s ease, background 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease;
+  /* Subtly capture refractive glass edge highlights and dark depths */
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.05),
+              inset 0 0 0 1px rgba(255, 255, 255, 0.02),
+              0 8px 32px 0 rgba(0, 0, 0, 0.2);
 }
 
 
@@ -101,21 +105,24 @@ body:has(.has-bg),
 .has-bg .titlebar-glass { background: var(--bg-sidebar-glass) !important; }
 
 
-/* ─── Scrollbars ───────────────────────────────────────────── */
+/* ─── Scrollbars (Liquid Glass Scrollbars) ────────────────── */
 
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: var(--scrollbar-track);
+  background: transparent; /* Invisible and padded track to blend seamlessly */
 }
 ::-webkit-scrollbar-thumb {
   background: var(--scrollbar-thumb);
   border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.03); /* Tiny border edge */
+  transition: background var(--transition), box-shadow var(--transition);
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--text-muted);
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent-glow);
 }
 
 /* ─── Utility classes ─────────────────────────────────────── */
@@ -462,4 +469,237 @@ body:has(.has-bg),
 
 .animate-shake {
   animation: shake 0.4s ease-out;
+}
+
+/* Custom Glassmorphic Switch Toggle */
+.custom-switch {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  width: 42px;
+  height: 20px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3);
+  user-select: none;
+}
+
+.custom-switch::after {
+  content: '';
+  position: absolute;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--text-secondary);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.custom-switch.active {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+  box-shadow: 0 0 10px var(--accent-glow), inset 0 1px 2px rgba(0,0,0,0.2);
+}
+
+.custom-switch.active::after {
+  left: 24px;
+  background: var(--text-on-accent);
+  box-shadow: 0 0 6px var(--accent-light);
+}
+
+/* Editor Immersive Focus Glow */
+.editor-glass {
+  position: relative;
+  transition: box-shadow 0.4s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.editor-glass.focused-immersive {
+  box-shadow: 0 0 24px var(--accent-glow), inset 0 0 12px rgba(255, 255, 255, 0.01) !important;
+  border-color: var(--accent) !important;
+}
+
+/* Warnings and badge pulse animation */
+@keyframes cyber-warning-pulse {
+  0%, 100% {
+    opacity: 0.95;
+    box-shadow: 0 0 4px rgba(239, 68, 68, 0.15);
+  }
+  50% {
+    opacity: 0.75;
+    box-shadow: 0 0 12px rgba(239, 68, 68, 0.45);
+  }
+}
+
+/* ─── Premium Tabs Support ────────────────────────────────── */
+
+.tab-strip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px 0 12px;
+  background: rgba(10, 10, 15, 0.95);
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  flex-shrink: 0;
+  user-select: none;
+  scrollbar-width: none; /* Firefox */
+}
+
+.tab-strip::-webkit-scrollbar {
+  display: none; /* Chrome/Safari */
+}
+
+.editor-tab {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  min-width: 120px;
+  max-width: 200px;
+  height: 36px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border);
+  border-bottom: none;
+  border-radius: 8px 8px 0 0;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 500;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
+}
+
+.editor-tab:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-primary);
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+.editor-tab.active {
+  background: var(--bg-editor);
+  color: var(--accent-light);
+  border-color: var(--accent);
+  border-bottom: 1px solid var(--bg-editor);
+  margin-bottom: -1px;
+  box-shadow: 0 -2px 10px var(--accent-glow);
+  font-weight: 600;
+  z-index: 2;
+}
+
+.editor-tab-title {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dirty-indicator-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #f97316; /* Amber/Orange */
+  box-shadow: 0 0 8px #ea580c, 0 0 16px #ea580c;
+  animation: pulse-orange 1.5s infinite ease-in-out;
+  flex-shrink: 0;
+}
+
+@keyframes pulse-orange {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 1;
+    box-shadow: 0 0 8px #ea580c;
+  }
+  50% {
+    transform: scale(1.15);
+    opacity: 0.7;
+    box-shadow: 0 0 14px #ea580c, 0 0 20px #ea580c;
+  }
+}
+
+.tab-close-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.tab-close-btn:hover {
+  background: rgba(239, 68, 68, 0.2);
+  color: #ef4444;
+}
+
+.tab-new-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin-bottom: 2px;
+  flex-shrink: 0;
+}
+
+.tab-new-btn:hover {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+  color: var(--accent-light);
+  box-shadow: 0 0 8px var(--accent-glow);
+}
+
+/* Custom New Note button with Tab + style integration */
+.new-note-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-weight: 500;
+}
+
+.new-note-btn:hover {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+  color: var(--accent-light);
+  box-shadow: 0 0 8px var(--accent-glow);
+}
+
+/* Wide tabs support */
+.tab-strip.tabs-wide .editor-tab {
+  min-width: 168px;
+  max-width: 280px;
+}
+
+/* Premium Tooltip animations */
+@keyframes tooltipFadeIn {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -4px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
 }

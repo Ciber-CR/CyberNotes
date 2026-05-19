@@ -36,6 +36,8 @@ interface Props {
   onCapsLockSoundScopeChange: (v: string) => void;
   onClose: () => void;
   onLock: () => void;
+  tabsWidthMode: 'normal' | 'wide';
+  onTabsWidthModeChange: (v: 'normal' | 'wide') => void;
 }
 
 type Tab = 'general' | 'security' | 'about';
@@ -52,7 +54,8 @@ export default function SettingsModal({
   autoUnlockCapsLockTimeout, onAutoUnlockCapsLockTimeoutChange,
   capsLockSound, onCapsLockSoundChange,
   capsLockSoundScope, onCapsLockSoundScopeChange,
-  onClose, onLock 
+  onClose, onLock,
+  tabsWidthMode, onTabsWidthModeChange
 }: Props) {
   const [tab, setTab] = useState<Tab>('general');
   const [currentPwd, setCurrentPwd] = useState('');
@@ -440,26 +443,12 @@ export default function SettingsModal({
                     borderRadius: 'var(--radius-md)',
                     border: '1px solid var(--border)',
                     cursor: 'pointer'
-                  }}>
+                  }} onClick={() => handleToggleTray(!closeToTray)}>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                       <span style={{ fontSize: 13, color: 'var(--text-primary)', fontWeight: 500 }}>{language === 'es' ? 'Cerrar a la bandeja de sistema' : 'Close to system tray'}</span>
                       <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{language === 'es' ? 'Al presionar X, la app se mantendrá activa en la bandeja' : 'Pressing X keeps the app active in the system tray'}</span>
                     </div>
-                    <input 
-                      type="checkbox" 
-                      checked={closeToTray}
-                      onChange={(e) => handleToggleTray(e.target.checked)}
-                      style={{
-                        width: 40,
-                        height: 20,
-                        appearance: 'none',
-                        background: closeToTray ? 'var(--accent)' : 'var(--border)',
-                        borderRadius: 10,
-                        position: 'relative',
-                        cursor: 'pointer',
-                        transition: 'background 0.2s'
-                      }}
-                    />
+                    <div className={`custom-switch ${closeToTray ? 'active' : ''}`} />
                   </label>
 
                   <label style={{ 
@@ -471,26 +460,12 @@ export default function SettingsModal({
                     borderRadius: 'var(--radius-md)',
                     border: '1px solid var(--border)',
                     cursor: 'pointer'
-                  }}>
+                  }} onClick={() => handleToggleMinimizeToTray(!minimizeToTray)}>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                       <span style={{ fontSize: 13, color: 'var(--text-primary)', fontWeight: 500 }}>{language === 'es' ? 'Minimizar a la bandeja de sistema' : 'Minimize to system tray'}</span>
                       <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{language === 'es' ? 'Al minimizar, ocultar la app de la barra de tareas' : 'Minimizing hides the app from the taskbar'}</span>
                     </div>
-                    <input 
-                      type="checkbox" 
-                      checked={minimizeToTray}
-                      onChange={(e) => handleToggleMinimizeToTray(e.target.checked)}
-                      style={{
-                        width: 40,
-                        height: 20,
-                        appearance: 'none',
-                        background: minimizeToTray ? 'var(--accent)' : 'var(--border)',
-                        borderRadius: 10,
-                        position: 'relative',
-                        cursor: 'pointer',
-                        transition: 'background 0.2s'
-                      }}
-                    />
+                    <div className={`custom-switch ${minimizeToTray ? 'active' : ''}`} />
                   </label>
 
                   <label style={{ 
@@ -502,26 +477,12 @@ export default function SettingsModal({
                     borderRadius: 'var(--radius-md)',
                     border: '1px solid var(--border)',
                     cursor: 'pointer'
-                  }}>
+                  }} onClick={() => handleToggleAutoStart(!autoStart)}>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                       <span style={{ fontSize: 13, color: 'var(--text-primary)', fontWeight: 500 }}>{language === 'es' ? 'Iniciar con Windows (minimizado)' : 'Start with Windows (minimized)'}</span>
                       <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{language === 'es' ? 'La app se abrirá en la bandeja al arrancar el equipo' : 'The app starts minimized to tray on system boot'}</span>
                     </div>
-                    <input 
-                      type="checkbox" 
-                      checked={autoStart}
-                      onChange={(e) => handleToggleAutoStart(e.target.checked)}
-                      style={{
-                        width: 40,
-                        height: 20,
-                        appearance: 'none',
-                        background: autoStart ? 'var(--accent)' : 'var(--border)',
-                        borderRadius: 10,
-                        position: 'relative',
-                        cursor: 'pointer',
-                        transition: 'background 0.2s'
-                      }}
-                    />
+                    <div className={`custom-switch ${autoStart ? 'active' : ''}`} />
                   </label>
 
                   <label style={{ 
@@ -533,27 +494,38 @@ export default function SettingsModal({
                     borderRadius: 'var(--radius-md)',
                     border: '1px solid var(--border)',
                     cursor: 'pointer'
-                  }}>
+                  }} onClick={() => onRememberLastNoteChange(!rememberLastNote)}>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                      <span style={{ fontSize: 13, color: 'var(--text-primary)', fontWeight: 500 }}>{language === 'es' ? 'Recordar última nota al abrir' : 'Remember last note on startup'}</span>
-                      <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{language === 'es' ? 'La app se reabrirá en la nota donde la dejaste' : 'The app reopens with your last edited note'}</span>
+                      <span style={{ fontSize: 13, color: 'var(--text-primary)', fontWeight: 500 }}>{language === 'es' ? 'Restaurar sesión de pestañas' : 'Restore latest tabs session'}</span>
+                      <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{language === 'es' ? 'La app se reabrirá con todas tus pestañas y la nota activa de la sesión anterior' : 'The app reopens with all your tabs and active note from the last session'}</span>
                     </div>
-                    <input 
-                      type="checkbox" 
-                      checked={rememberLastNote}
-                      onChange={(e) => onRememberLastNoteChange(e.target.checked)}
-                      style={{
-                        width: 40,
-                        height: 20,
-                        appearance: 'none',
-                        background: rememberLastNote ? 'var(--accent)' : 'var(--border)',
-                        borderRadius: 10,
-                        position: 'relative',
-                        cursor: 'pointer',
-                        transition: 'background 0.2s'
-                      }}
-                    />
+                    <div className={`custom-switch ${rememberLastNote ? 'active' : ''}`} />
                   </label>
+
+                  <div style={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    justifyContent: 'space-between',
+                    padding: '12px 16px',
+                    background: 'var(--bg-surface)',
+                    borderRadius: 'var(--radius-md)',
+                    border: '1px solid var(--border)',
+                    gap: 16,
+                  }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1 }}>
+                      <span style={{ fontSize: 13, color: 'var(--text-primary)', fontWeight: 500 }}>{language === 'es' ? 'Ancho de pestañas' : 'Tab Width'}</span>
+                      <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{language === 'es' ? 'Elige el tamaño horizontal de las pestañas en el editor' : 'Choose the horizontal size of tabs in the editor'}</span>
+                    </div>
+                    <select 
+                      value={tabsWidthMode}
+                      onChange={(e) => onTabsWidthModeChange(e.target.value as 'normal' | 'wide')}
+                      className="input"
+                      style={{ fontSize: 12, background: 'var(--bg-app)', cursor: 'pointer', width: 120, padding: '6px 8px' }}
+                    >
+                      <option value="normal">{language === 'es' ? 'Normal' : 'Normal'}</option>
+                      <option value="wide">{language === 'es' ? 'Ancho (+40%)' : 'Wide (+40%)'}</option>
+                    </select>
+                  </div>
 
                   <label style={{ 
                     display: 'flex', 
@@ -564,26 +536,12 @@ export default function SettingsModal({
                     borderRadius: 'var(--radius-md)',
                     border: '1px solid var(--border)',
                     cursor: 'pointer'
-                  }}>
+                  }} onClick={() => onShowLineCounterChange(!showLineCounter)}>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                       <span style={{ fontSize: 13, color: 'var(--text-primary)', fontWeight: 500 }}>{language === 'es' ? 'Mostrar contador de líneas' : 'Show line counter'}</span>
                       <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{language === 'es' ? 'Muestra la línea y columna actual en el editor' : 'Display current line and column in the editor'}</span>
                     </div>
-                    <input 
-                      type="checkbox" 
-                      checked={showLineCounter}
-                      onChange={(e) => onShowLineCounterChange(e.target.checked)}
-                      style={{
-                        width: 40,
-                        height: 20,
-                        appearance: 'none',
-                        background: showLineCounter ? 'var(--accent)' : 'var(--border)',
-                        borderRadius: 10,
-                        position: 'relative',
-                        cursor: 'pointer',
-                        transition: 'background 0.2s'
-                      }}
-                    />
+                    <div className={`custom-switch ${showLineCounter ? 'active' : ''}`} />
                   </label>
 
                   <label style={{ 
@@ -600,20 +558,9 @@ export default function SettingsModal({
                       <span style={{ fontSize: 13, color: 'var(--text-primary)', fontWeight: 500 }}>{language === 'es' ? 'Autoguardado' : 'Autosave'}</span>
                       <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{language === 'es' ? 'Guardar automáticamente al editar. Si se desactiva, usa el botón Guardar en el editor.' : 'Save changes automatically as you type. If disabled, save changes manually.'}</span>
                     </div>
-                    <input 
-                      type="checkbox" 
-                      checked={autosaveEnabled}
-                      onChange={(e) => onAutosaveEnabledChange(e.target.checked)}
-                      style={{
-                        width: 40,
-                        height: 20,
-                        appearance: 'none',
-                        background: autosaveEnabled ? 'var(--accent)' : 'var(--border)',
-                        borderRadius: 10,
-                        position: 'relative',
-                        cursor: 'pointer',
-                        transition: 'background 0.2s'
-                      }}
+                    <div 
+                      className={`custom-switch ${autosaveEnabled ? 'active' : ''}`}
+                      onClick={() => onAutosaveEnabledChange(!autosaveEnabled)}
                     />
                   </label>
 
@@ -637,21 +584,10 @@ export default function SettingsModal({
                         <span style={{ fontSize: 13, color: 'var(--text-primary)', fontWeight: 500 }}>{language === 'es' ? 'Desactivar Bloq Mayús por inactividad' : 'Auto-unlock Caps Lock on inactivity'}</span>
                         <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{language === 'es' ? 'Desactiva físicamente el Bloq Mayús tras un periodo ajustable de inactividad de teclado en el editor' : 'Physically turns off Caps Lock after a configurable period of keyboard inactivity in the editor'}</span>
                       </div>
-                      <input 
-                        type="checkbox" 
-                        checked={autoUnlockCapsLock}
-                        onChange={(e) => onAutoUnlockCapsLockChange(e.target.checked)}
-                        style={{
-                          width: 40,
-                          height: 20,
-                          appearance: 'none',
-                          background: autoUnlockCapsLock ? 'var(--accent)' : 'var(--border)',
-                          borderRadius: 10,
-                          position: 'relative',
-                          cursor: 'pointer',
-                          transition: 'background 0.2s',
-                          flexShrink: 0,
-                        }}
+                      <div 
+                        className={`custom-switch ${autoUnlockCapsLock ? 'active' : ''}`}
+                        onClick={() => onAutoUnlockCapsLockChange(!autoUnlockCapsLock)}
+                        style={{ flexShrink: 0 }}
                       />
                     </label>
 

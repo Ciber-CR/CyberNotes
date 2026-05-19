@@ -543,6 +543,9 @@ ipcMain.handle('notes:getAll', () => {
 });
 
 ipcMain.handle('notes:getByFolder', (_e: any, folderId: string | null) => {
+  if (folderId === 'floating') {
+    return queryAll('SELECT * FROM notes WHERE folder_id IS NULL OR folder_id = "" ORDER BY pinned DESC, updated_at DESC');
+  }
   if (!folderId) {
     return queryAll('SELECT * FROM notes ORDER BY pinned DESC, updated_at DESC');
   }

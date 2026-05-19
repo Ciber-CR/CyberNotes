@@ -1,7 +1,7 @@
 {
   "name": "cyber-notes",
   "private": true,
-  "version": "1.0.1",
+  "version": "1.1.0",
   "type": "module",
   "main": "dist-electron/main.js",
   "scripts": {
@@ -33,7 +33,10 @@
       "createDesktopShortcut": "always",
       "runAfterFinish": true,
       "perMachine": true,
-      "installerLanguages": ["es", "en"],
+      "installerLanguages": [
+        "es",
+        "en"
+      ],
       "multiLanguageInstaller": true,
       "shortcutName": "CyberNotes"
     },
